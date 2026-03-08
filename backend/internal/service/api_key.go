@@ -51,10 +51,21 @@ func (s *apiKeyService) Create(ctx context.Context, req *dto.CreateApiKeyRequest
 
 	role := trim(req.Role)
 	if role == "" {
-		role = model.ApiKeyRoleAdmin
+		role = model.ApiKeyRoleWebhook
 	}
 	if role != model.ApiKeyRoleAdmin && role != model.ApiKeyRoleWebhook {
 		return nil, invalidInput("role must be 'admin' or 'webhook'")
+	}
+
+	// Admin keys may only be created during initial setup (when no admin key exists yet).
+	if role == model.ApiKeyRoleAdmin {
+		hasAdmin, err := s.HasAnyAdminKey(ctx)
+		if err != nil {
+			return nil, internalError("failed to check admin keys", err)
+		}
+		if hasAdmin {
+			return nil, conflict("admin key can only be created during initial setup")
+		}
 	}
 
 	scope := trim(req.WebhookScope)

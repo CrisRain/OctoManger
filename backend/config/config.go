@@ -21,6 +21,8 @@ type Config struct {
 
 type ServerConfig struct {
 	Port       string `mapstructure:"port"`
+	HTTPPort   string `mapstructure:"http_port"`   // plain-HTTP redirect listener; empty = disabled
+	TLS        bool   `mapstructure:"tls"`         // enable HTTPS (default: true)
 	Mode       string `mapstructure:"mode"`
 	WebDistDir string `mapstructure:"web_dist_dir"`
 }
@@ -89,8 +91,9 @@ func (c PythonConfig) Timeout() time.Duration {
 }
 
 type LoggingConfig struct {
-	File  string `mapstructure:"file"`
-	Level string `mapstructure:"level"`
+	File   string `mapstructure:"file"`
+	Level  string `mapstructure:"level"`
+	Format string `mapstructure:"format"` // "console" (default) or "json"
 }
 
 type PathsConfig struct {
@@ -101,7 +104,9 @@ func Load() (Config, error) {
 	v := viper.New()
 	v.SetConfigType("yaml")
 
-	v.SetDefault("server.port", "8080")
+	v.SetDefault("server.port", "443")
+	v.SetDefault("server.http_port", "80")
+	v.SetDefault("server.tls", true)
 	v.SetDefault("server.mode", "release")
 	v.SetDefault("server.web_dist_dir", "")
 
@@ -119,8 +124,9 @@ func Load() (Config, error) {
 	v.SetDefault("python.script", "../scripts/python/account_manager.py")
 	v.SetDefault("python.timeout_seconds", 60)
 
-	v.SetDefault("logging.file", "logs/octomanger.log")
+	v.SetDefault("logging.file", "")
 	v.SetDefault("logging.level", "info")
+	v.SetDefault("logging.format", "console")
 
 	v.SetDefault("paths.octo_module_dir", "../scripts/python/modules")
 

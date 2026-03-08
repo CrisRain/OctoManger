@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -12,6 +13,10 @@ import (
 )
 
 const requestIDKey = "request_id"
+
+// staticPrefixes contains path prefixes that are logged at Debug level rather
+// than Info so they don't pollute normal log output.
+var staticPrefixes = []string{"/assets/", "/favicon"}
 
 func Logger(logger *zap.Logger) gin.HandlerFunc {
 	if logger == nil {
@@ -29,19 +34,45 @@ func Logger(logger *zap.Logger) gin.HandlerFunc {
 		start := time.Now()
 		c.Next()
 
-		logger.Info(
-			"http request",
-			zap.String("method", c.Request.Method),
-			zap.String("path", c.Request.URL.RequestURI()),
-			zap.Int("status", c.Writer.Status()),
-			zap.Int("bytes", c.Writer.Size()),
+		status := c.Writer.Status()
+		dur := time.Since(start)
+		path := c.Request.URL.RequestURI()
+
+		msg := fmt.Sprintf("%s %s %d %s",
+			c.Request.Method,
+			path,
+			status,
+			formatDuration(dur),
+		)
+
+		fields := []zap.Field{
 			zap.String("request_id", requestID),
 			zap.String("trace_id", requestID),
-			zap.String("remote_addr", c.Request.RemoteAddr),
-			zap.String("user_agent", c.Request.UserAgent()),
-			zap.Duration("duration", time.Since(start)),
-		)
+			zap.Int("bytes", c.Writer.Size()),
+			zap.String("ip", c.ClientIP()),
+		}
+
+		switch {
+		case status >= 500:
+			logger.Error(msg, fields...)
+		case status >= 400:
+			logger.Warn(msg, fields...)
+		case path == "/healthz" || isStaticPath(path):
+			// health checks and static assets only visible at debug level
+			logger.Debug(msg, fields...)
+		default:
+			logger.Info(msg, fields...)
+		}
 	}
+}
+
+func isStaticPath(path string) bool {
+	for _, prefix := range staticPrefixes {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func RequestID(c *gin.Context) string {
@@ -57,4 +88,15 @@ func RequestID(c *gin.Context) string {
 		return requestID
 	}
 	return "-"
+}
+
+func formatDuration(d time.Duration) string {
+	switch {
+	case d < time.Millisecond:
+		return fmt.Sprintf("%.2fµs", float64(d.Microseconds()))
+	case d < time.Second:
+		return fmt.Sprintf("%.2fms", float64(d.Microseconds())/1000)
+	default:
+		return fmt.Sprintf("%.2fs", d.Seconds())
+	}
 }

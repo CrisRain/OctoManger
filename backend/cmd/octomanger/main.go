@@ -14,6 +14,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -26,6 +27,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/hibiken/asynq"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"gorm.io/gorm"
 
 	"octomanger/backend/config"
@@ -36,6 +38,7 @@ import (
 	"octomanger/backend/internal/service"
 	"octomanger/backend/internal/task"
 	taskhandler "octomanger/backend/internal/task/handler"
+	"octomanger/backend/internal/tlsmgr"
 	"octomanger/backend/internal/worker/bridge"
 	"octomanger/backend/pkg/database"
 	"octomanger/backend/pkg/logger"
@@ -216,15 +219,37 @@ func runAPI(ctx context.Context, cfg config.Config, db *gorm.DB, log *zap.Logger
 		Handler:      engine,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 30 * time.Second,
+		ErrorLog:     logger.NewStdLogger(log, zapcore.WarnLevel, "tls: unknown certificate", "tls: no supported versions"),
 		IdleTimeout:  60 * time.Second,
 	}
 
-	go func() {
-		log.Info("api server started", zap.String("addr", addr))
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatal("api server failed", zap.Error(err))
+	if cfg.Server.TLS {
+		mgr := tlsmgr.New(systemConfigSvc)
+		if err := mgr.EnsureCert(context.Background()); err != nil {
+			log.Fatal("failed to initialise TLS certificate", zap.Error(err))
 		}
-	}()
+		srv.TLSConfig = mgr.TLSConfig()
+
+		if httpPort := strings.TrimSpace(cfg.Server.HTTPPort); httpPort != "" {
+			httpAddr := normalizeAddr(httpPort)
+			httpsPort := strings.TrimPrefix(addr, ":")
+			go startHTTPRedirect(ctx, httpAddr, httpsPort, log)
+		}
+
+		go func() {
+			log.Info("api server started (TLS)", zap.String("addr", addr))
+			if err := srv.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Fatal("api server failed", zap.Error(err))
+			}
+		}()
+	} else {
+		go func() {
+			log.Info("api server started", zap.String("addr", addr))
+			if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Fatal("api server failed", zap.Error(err))
+			}
+		}()
+	}
 
 	<-ctx.Done()
 	shutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -233,6 +258,31 @@ func runAPI(ctx context.Context, cfg config.Config, db *gorm.DB, log *zap.Logger
 		log.Error("api server shutdown failed", zap.Error(err))
 	}
 	log.Info("api server stopped")
+}
+
+func startHTTPRedirect(ctx context.Context, httpAddr, httpsPort string, log *zap.Logger) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		host := r.Host
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
+		}
+		target := "https://" + host
+		if httpsPort != "443" {
+			target += ":" + httpsPort
+		}
+		target += r.RequestURI
+		http.Redirect(w, r, target, http.StatusMovedPermanently)
+	})
+	srv := &http.Server{Addr: httpAddr, Handler: mux, ReadTimeout: 10 * time.Second}
+	go func() {
+		<-ctx.Done()
+		_ = srv.Shutdown(context.Background())
+	}()
+	log.Info("http redirect server started", zap.String("addr", httpAddr))
+	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.Warn("http redirect server stopped", zap.Error(err))
+	}
 }
 
 func runWorker(ctx context.Context, cfg config.Config, db *gorm.DB, log *zap.Logger,

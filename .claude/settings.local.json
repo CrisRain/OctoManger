@@ -1,14 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Bash(grep -n \"TenantID\" d:/Projects/OctoManger/backend/internal/services/*.go)",
-      "Bash(go build ./backend/...)",
-      "Bash(go build ./...)",
-      "Bash(go test ./internal/octomodule/...)",
-      "Bash(bun add @tanstack/react-query)",
-      "Bash(bun run build)",
-      "Bash(go build ./cmd/scheduler ./cmd/octomanger)",
-      "Bash(go build ./cmd/...)"
+      "Bash(go build ./...)"
     ]
   }
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -14,11 +15,14 @@ import (
 	"github.com/hibiken/asynq"
 	"go.uber.org/zap"
 
+	"go.uber.org/zap/zapcore"
+
 	"octomanger/backend/config"
 	"octomanger/backend/internal/repository"
 	"octomanger/backend/internal/router"
 	"octomanger/backend/internal/service"
 	"octomanger/backend/internal/task"
+	"octomanger/backend/internal/tlsmgr"
 	"octomanger/backend/internal/worker/bridge"
 	"octomanger/backend/pkg/database"
 	"octomanger/backend/pkg/logger"
@@ -146,14 +150,37 @@ func main() {
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  60 * time.Second,
+		ErrorLog:     logger.NewStdLogger(log, zapcore.WarnLevel, "tls: unknown certificate", "tls: no supported versions"),
 	}
 
-	go func() {
-		log.Info("api server started", zap.String("addr", addr))
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatal("api server failed", zap.Error(err))
+	if cfg.Server.TLS {
+		mgr := tlsmgr.New(systemConfigSvc)
+		if err := mgr.EnsureCert(context.Background()); err != nil {
+			log.Fatal("failed to initialise TLS certificate", zap.Error(err))
 		}
-	}()
+		srv.TLSConfig = mgr.TLSConfig()
+
+		// Start plain-HTTP redirect listener if configured.
+		if httpPort := strings.TrimSpace(cfg.Server.HTTPPort); httpPort != "" {
+			httpAddr := normalizeAddr(httpPort)
+			httpsPort := portOnly(addr)
+			go startHTTPRedirect(httpAddr, httpsPort, log)
+		}
+
+		go func() {
+			log.Info("api server started (TLS)", zap.String("addr", addr))
+			if err := srv.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Fatal("api server failed", zap.Error(err))
+			}
+		}()
+	} else {
+		go func() {
+			log.Info("api server started", zap.String("addr", addr))
+			if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Fatal("api server failed", zap.Error(err))
+			}
+		}()
+	}
 
 	shutdown := make(chan os.Signal, 1)
 	signal.Notify(shutdown, os.Interrupt, syscall.SIGTERM)
@@ -168,6 +195,29 @@ func main() {
 	log.Info("api server stopped")
 }
 
+// startHTTPRedirect runs a plain-HTTP server that permanently redirects every
+// request to the HTTPS equivalent.
+func startHTTPRedirect(httpAddr, httpsPort string, log *zap.Logger) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		host := r.Host
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
+		}
+		target := "https://" + host
+		if httpsPort != "443" {
+			target += ":" + httpsPort
+		}
+		target += r.RequestURI
+		http.Redirect(w, r, target, http.StatusMovedPermanently)
+	})
+	srv := &http.Server{Addr: httpAddr, Handler: mux, ReadTimeout: 10 * time.Second}
+	log.Info("http redirect server started", zap.String("addr", httpAddr))
+	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.Warn("http redirect server stopped", zap.Error(err))
+	}
+}
+
 func normalizeAddr(port string) string {
 	trimmed := strings.TrimSpace(port)
 	if trimmed == "" {
@@ -177,4 +227,9 @@ func normalizeAddr(port string) string {
 		return trimmed
 	}
 	return ":" + trimmed
+}
+
+// portOnly returns just the numeric port from a normalizeAddr result (e.g. ":443" → "443").
+func portOnly(addr string) string {
+	return strings.TrimPrefix(addr, ":")
 }

@@ -54,21 +54,30 @@ func Init(cfg config.LoggingConfig) (*zap.Logger, error) {
 		return nil, err
 	}
 
-	encoderConfig := zap.NewProductionEncoderConfig()
-	encoderConfig.TimeKey = "ts"
-	encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
-
 	ws, err := buildWriteSyncer(cfg.File)
 	if err != nil {
 		return nil, err
 	}
 
-	core := zapcore.NewCore(
-		zapcore.NewJSONEncoder(encoderConfig),
-		ws,
-		level,
-	)
+	var enc zapcore.Encoder
+	const consoleSep = "  "
+	if strings.ToLower(strings.TrimSpace(cfg.Format)) == "json" {
+		encCfg := zap.NewProductionEncoderConfig()
+		encCfg.TimeKey = "ts"
+		encCfg.EncodeTime = zapcore.ISO8601TimeEncoder
+		enc = zapcore.NewJSONEncoder(encCfg)
+	} else {
+		// console format: human-readable with color level labels
+		encCfg := zap.NewDevelopmentEncoderConfig()
+		encCfg.EncodeTime = zapcore.TimeEncoderOfLayout("2006-01-02 15:04:05.000")
+		encCfg.EncodeLevel = zapcore.CapitalColorLevelEncoder
+		encCfg.EncodeCaller = zapcore.ShortCallerEncoder
+		encCfg.ConsoleSeparator = consoleSep
+		enc = zapcore.NewConsoleEncoder(encCfg)
+		ws = newLogfmtSyncer(ws, consoleSep)
+	}
 
+	core := zapcore.NewCore(enc, ws, level)
 	logger := zap.New(core, zap.AddCaller(), zap.AddStacktrace(zapcore.ErrorLevel))
 	return logger, nil
 }
