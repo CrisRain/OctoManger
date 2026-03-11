@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -30,6 +31,54 @@ func (h *JobHandler) List(c *gin.Context) {
 		response.FailWithError(c, err)
 		return
 	}
+	response.Success(c, result)
+}
+
+func (h *JobHandler) Summary(c *gin.Context) {
+	result, err := h.svc.Summary(c.Request.Context())
+	if err != nil {
+		response.FailWithError(c, err)
+		return
+	}
+	response.Success(c, result)
+}
+
+func (h *JobHandler) ListRuns(c *gin.Context) {
+	limit, offset, err := resolvePagination(c, 50, 500)
+	if err != nil {
+		response.Fail(c, http.StatusBadRequest, "invalid pagination parameters")
+		return
+	}
+
+	var jobID *uint64
+	if rawID := strings.TrimSpace(c.Param("id")); rawID != "" {
+		parsed, parseErr := strconv.ParseUint(rawID, 10, 64)
+		if parseErr != nil || parsed == 0 {
+			response.Fail(c, http.StatusBadRequest, "invalid job id")
+			return
+		}
+		jobID = &parsed
+	} else if rawJobID := strings.TrimSpace(c.Query("job_id")); rawJobID != "" {
+		parsed, parseErr := strconv.ParseUint(rawJobID, 10, 64)
+		if parseErr != nil || parsed == 0 {
+			response.Fail(c, http.StatusBadRequest, "invalid job id")
+			return
+		}
+		jobID = &parsed
+	}
+
+	result, err := h.svc.ListRuns(c.Request.Context(), service.JobRunListFilter{
+		JobID:     jobID,
+		TypeKey:   strings.TrimSpace(c.Query("type_key")),
+		ActionKey: strings.TrimSpace(c.Query("action_key")),
+		WorkerID:  strings.TrimSpace(c.Query("worker_id")),
+		Outcome:   strings.TrimSpace(c.Query("outcome")),
+	}, limit, offset)
+	if err != nil {
+		response.FailWithError(c, err)
+		return
+	}
+
 	response.Success(c, result)
 }
 
@@ -80,24 +129,40 @@ func (h *JobHandler) Patch(c *gin.Context) {
 	response.Success(c, item)
 }
 
-func (h *JobHandler) Cancel(c *gin.Context) {
+func (h *JobHandler) PostAction(c *gin.Context) {
 	rawID := c.Param("id")
-	idValue, ok := parseColonActionParam(rawID, "cancel")
-	if !ok {
-		response.Fail(c, http.StatusBadRequest, "invalid path: expected /api/v1/jobs/{id}:cancel")
+
+	if idValue, ok := parseColonActionParam(rawID, "cancel"); ok {
+		parsed, err := strconv.ParseUint(idValue, 10, 64)
+		if err != nil || parsed == 0 {
+			response.Fail(c, http.StatusBadRequest, "invalid job id")
+			return
+		}
+		item, err := h.svc.Cancel(c.Request.Context(), parsed)
+		if err != nil {
+			response.FailWithError(c, err)
+			return
+		}
+		response.Success(c, item)
 		return
 	}
-	parsed, err := strconv.ParseUint(idValue, 10, 64)
-	if err != nil || parsed == 0 {
-		response.Fail(c, http.StatusBadRequest, "invalid job id")
+
+	if idValue, ok := parseColonActionParam(rawID, "retry"); ok {
+		parsed, err := strconv.ParseUint(idValue, 10, 64)
+		if err != nil || parsed == 0 {
+			response.Fail(c, http.StatusBadRequest, "invalid job id")
+			return
+		}
+		item, err := h.svc.Retry(c.Request.Context(), parsed)
+		if err != nil {
+			response.FailWithError(c, err)
+			return
+		}
+		response.Success(c, item)
 		return
 	}
-	item, err := h.svc.Cancel(c.Request.Context(), parsed)
-	if err != nil {
-		response.FailWithError(c, err)
-		return
-	}
-	response.Success(c, item)
+
+	response.Fail(c, http.StatusBadRequest, "unknown action; expected :cancel or :retry")
 }
 
 func (h *JobHandler) Delete(c *gin.Context) {

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"octomanger/backend/internal/dto"
 	"octomanger/backend/internal/model"
@@ -12,11 +13,22 @@ import (
 type JobService interface {
 	List(ctx context.Context) ([]dto.JobResponse, error)
 	ListPaged(ctx context.Context, limit, offset int) (dto.PagedResponse[dto.JobResponse], error)
+	Summary(ctx context.Context) (*dto.JobSummaryResponse, error)
+	ListRuns(ctx context.Context, filter JobRunListFilter, limit, offset int) (*dto.JobRunListResponse, error)
 	Get(ctx context.Context, id uint64) (*dto.JobResponse, error)
 	Create(ctx context.Context, req *dto.CreateJobRequest) (*dto.JobResponse, error)
 	Patch(ctx context.Context, id uint64, req *dto.PatchJobRequest) (*dto.JobResponse, error)
 	Cancel(ctx context.Context, id uint64) (*dto.JobResponse, error)
+	Retry(ctx context.Context, id uint64) (*dto.JobResponse, error)
 	Delete(ctx context.Context, id uint64) error
+}
+
+type JobRunListFilter struct {
+	JobID     *uint64
+	TypeKey   string
+	ActionKey string
+	WorkerID  string
+	Outcome   string
 }
 
 type jobService struct {
@@ -53,7 +65,14 @@ func (s *jobService) List(ctx context.Context) ([]dto.JobResponse, error) {
 	}
 	responses := make([]dto.JobResponse, 0, len(items))
 	for i := range items {
-		responses = append(responses, jobToResponse(&items[i]))
+		response := jobToResponse(&items[i])
+		if s.jobRunRepo != nil {
+			if lastRun, runErr := s.jobRunRepo.GetLatestByJobID(ctx, items[i].ID); runErr == nil {
+				lastRunResponse := buildJobRunResponse(*lastRun, items[i].TypeKey, items[i].ActionKey)
+				response.LastRun = &lastRunResponse
+			}
+		}
+		responses = append(responses, response)
 	}
 	return responses, nil
 }
@@ -68,9 +87,76 @@ func (s *jobService) ListPaged(ctx context.Context, limit, offset int) (dto.Page
 	}
 	responses := make([]dto.JobResponse, 0, len(items))
 	for i := range items {
-		responses = append(responses, jobToResponse(&items[i]))
+		response := jobToResponse(&items[i])
+		if s.jobRunRepo != nil {
+			if lastRun, runErr := s.jobRunRepo.GetLatestByJobID(ctx, items[i].ID); runErr == nil {
+				lastRunResponse := buildJobRunResponse(*lastRun, items[i].TypeKey, items[i].ActionKey)
+				response.LastRun = &lastRunResponse
+			}
+		}
+		responses = append(responses, response)
 	}
 	return dto.PagedResponse[dto.JobResponse]{
+		Items:  responses,
+		Total:  total,
+		Limit:  limit,
+		Offset: offset,
+	}, nil
+}
+
+func (s *jobService) Summary(ctx context.Context) (*dto.JobSummaryResponse, error) {
+	summary, err := s.repo.Summary(ctx)
+	if err != nil {
+		return nil, internalError("failed to summarize jobs", err)
+	}
+	return &dto.JobSummaryResponse{
+		Total:    summary.Total,
+		Queued:   summary.Queued,
+		Running:  summary.Running,
+		Done:     summary.Done,
+		Failed:   summary.Failed,
+		Canceled: summary.Canceled,
+		Active:   summary.Queued + summary.Running,
+	}, nil
+}
+
+func (s *jobService) ListRuns(ctx context.Context, filter JobRunListFilter, limit, offset int) (*dto.JobRunListResponse, error) {
+	if s.jobRunRepo == nil {
+		return &dto.JobRunListResponse{
+			Items:  []dto.JobRunResponse{},
+			Total:  0,
+			Limit:  limit,
+			Offset: offset,
+		}, nil
+	}
+
+	normalized := repository.JobRunListFilter{
+		JobID:     filter.JobID,
+		TypeKey:   trim(filter.TypeKey),
+		ActionKey: trim(filter.ActionKey),
+		WorkerID:  trim(filter.WorkerID),
+		Outcome:   strings.ToLower(trim(filter.Outcome)),
+	}
+	switch normalized.Outcome {
+	case "", "success", "failed":
+	default:
+		return nil, invalidInput("outcome must be one of: success, failed")
+	}
+
+	items, total, err := s.jobRunRepo.ListPaged(ctx, normalized, limit, offset)
+	if err != nil {
+		return nil, internalError("failed to list job runs", err)
+	}
+	if items == nil {
+		items = []model.JobRunWithJob{}
+	}
+
+	responses := make([]dto.JobRunResponse, 0, len(items))
+	for i := range items {
+		responses = append(responses, jobRunToResponse(items[i]))
+	}
+
+	return &dto.JobRunListResponse{
 		Items:  responses,
 		Total:  total,
 		Limit:  limit,
@@ -89,17 +175,8 @@ func (s *jobService) Get(ctx context.Context, id uint64) (*dto.JobResponse, erro
 	response := jobToResponse(item)
 	if s.jobRunRepo != nil {
 		if lastRun, runErr := s.jobRunRepo.GetLatestByJobID(ctx, item.ID); runErr == nil {
-			response.LastRun = &dto.JobRunResponse{
-				ID:           lastRun.ID,
-				JobID:        lastRun.JobID,
-				WorkerID:     lastRun.WorkerID,
-				Attempt:      lastRun.Attempt,
-				Result:       lastRun.Result,
-				ErrorCode:    lastRun.ErrorCode,
-				ErrorMessage: lastRun.ErrorMessage,
-				StartedAt:    lastRun.StartedAt,
-				EndedAt:      lastRun.EndedAt,
-			}
+			lastRunResponse := buildJobRunResponse(*lastRun, item.TypeKey, item.ActionKey)
+			response.LastRun = &lastRunResponse
 		}
 	}
 	return &response, nil
@@ -241,6 +318,36 @@ func (s *jobService) Cancel(ctx context.Context, id uint64) (*dto.JobResponse, e
 		return nil, wrapRepoError(err, "job not found")
 	}
 	response := jobToResponse(item)
+	return &response, nil
+}
+
+func (s *jobService) Retry(ctx context.Context, id uint64) (*dto.JobResponse, error) {
+	if id == 0 {
+		return nil, invalidInput("job id is required")
+	}
+	original, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, wrapRepoError(err, "job not found")
+	}
+	newJob := &model.Job{
+		TypeKey:   original.TypeKey,
+		ActionKey: original.ActionKey,
+		Selector:  original.Selector,
+		Params:    original.Params,
+		Status:    jobStatusQueued,
+	}
+	if err := s.repo.Create(ctx, newJob); err != nil {
+		return nil, internalError("failed to create retry job", err)
+	}
+	if s.dispatcher == nil {
+		_, _ = s.repo.UpdateStatus(ctx, newJob.ID, jobStatusFailed)
+		return nil, internalError("job dispatcher is not configured", errors.New("missing dispatcher"))
+	}
+	if err := s.dispatcher.EnqueueDispatchJob(ctx, newJob.ID); err != nil {
+		_, _ = s.repo.UpdateStatus(ctx, newJob.ID, jobStatusFailed)
+		return nil, internalError("failed to enqueue retry job", err)
+	}
+	response := jobToResponse(newJob)
 	return &response, nil
 }
 

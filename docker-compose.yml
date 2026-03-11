@@ -42,6 +42,8 @@ services:
         condition: service_healthy
     ports:
       - "8080:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       SERVER_PORT: "8080"
       SERVER_WEB_DIST_DIR: "/app/web-dist"
@@ -50,18 +52,28 @@ services:
       REDIS_ADDR: "redis:6379"
       ASYNQ_CONCURRENCY: "10"
       PYTHON_BIN: "python3"
-      PYTHON_SCRIPT: "/app/scripts/python/account_manager.py"
       PATHS_OCTO_MODULE_DIR: "/app/scripts/python/modules"
+      OCTOMODULE_SERVICE_URL: "${OCTOMODULE_SERVICE_URL:-http://127.0.0.1:8091}"
+      OCTOMODULE_SERVICE_EMBEDDED: "${OCTOMODULE_SERVICE_EMBEDDED:-true}"
+      OCTOMODULE_SERVICE_TOKEN: "${OCTOMODULE_SERVICE_TOKEN:-}"
+      PLAYWRIGHT_DOWNLOAD_HOST: "${PLAYWRIGHT_DOWNLOAD_HOST:-}"
+      PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT: "${PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT:-120000}"
+      PLAYWRIGHT_BROWSERS_PATH: "${PLAYWRIGHT_BROWSERS_PATH:-/ms-playwright}"
+      HTTP_PROXY: "${HTTP_PROXY:-}"
+      HTTPS_PROXY: "${HTTPS_PROXY:-}"
+      ALL_PROXY: "${ALL_PROXY:-}"
+      NO_PROXY: "${NO_PROXY:-}"
       DATABASE_URL: "postgres://octo:octo@postgres:5432/octomanger?sslmode=disable"
       DATABASE_AUTO_MIGRATE: "true"
       DATABASE_RESET: "false"
     volumes:
       - ./logs:/app/logs
-      - octo_modules:/app/scripts/python/modules
+      - ./scripts/python/modules:/app/scripts/python/modules
       - pip_cache:/root/.cache/pip
+      - playwright_cache:${PLAYWRIGHT_BROWSERS_PATH:-/ms-playwright}
 
 volumes:
   pgdata:
   redisdata:
-  octo_modules:
   pip_cache:
+  playwright_cache:

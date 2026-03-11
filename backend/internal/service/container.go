@@ -6,6 +6,7 @@ type Container struct {
 	Account      AccountService
 	EmailAccount EmailAccountService
 	OctoModule   OctoModuleService
+	OctoInternal OctoModuleInternalService
 	Job          JobService
 	ApiKey       ApiKeyService
 	Trigger      TriggerService

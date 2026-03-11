@@ -31,7 +31,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -42,13 +42,17 @@ import (
 	"octomanger/backend/internal/octomodule"
 )
 
+const ipcProtocol = "octo.ipc.v1"
+
 // Config holds daemon manager settings.
 type Config struct {
-	PythonBin  string
-	ModuleDir  string
-	WorkerID   string        // written to job_run.worker_id; defaults to "daemon"
-	RestartMin time.Duration // minimum backoff before restarting a crashed process
-	RestartMax time.Duration // maximum backoff ceiling
+	PythonBin        string
+	ModuleDir        string
+	WorkerID         string
+	InternalAPIURL   string
+	InternalAPIToken string
+	RestartMin       time.Duration
+	RestartMax       time.Duration
 }
 
 func (c *Config) setDefaults() {
@@ -68,6 +72,8 @@ type Manager struct {
 	db     *gorm.DB
 	cfg    Config
 	logger *zap.Logger
+	mu     sync.Mutex
+	runs   map[uint64]*daemonRunState
 }
 
 func NewManager(db *gorm.DB, cfg Config, logger *zap.Logger) *Manager {
@@ -75,7 +81,12 @@ func NewManager(db *gorm.DB, cfg Config, logger *zap.Logger) *Manager {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
-	return &Manager{db: db, cfg: cfg, logger: logger}
+	return &Manager{
+		db:     db,
+		cfg:    cfg,
+		logger: logger,
+		runs:   make(map[uint64]*daemonRunState),
+	}
 }
 
 // Run blocks until ctx is cancelled. It discovers daemon-enabled account types, resolves
@@ -268,6 +279,11 @@ func (m *Manager) runProcessLoop(ctx context.Context, scriptPath, action string,
 // runProcess starts a single Python subprocess, reads its NDJSON stdout line by line,
 // and persists events. It returns when the process exits.
 func (m *Manager) runProcess(ctx context.Context, scriptPath, action string, jobID uint64, acc model.Account) error {
+	runtimeInfo, err := octomodule.EnsureRuntime(ctx, scriptPath, m.cfg.PythonBin)
+	if err != nil {
+		return fmt.Errorf("prepare module runtime: %w", err)
+	}
+
 	var spec map[string]any
 	if len(acc.Spec) > 0 {
 		_ = json.Unmarshal(acc.Spec, &spec)
@@ -279,27 +295,39 @@ func (m *Manager) runProcess(ctx context.Context, scriptPath, action string, job
 			"identifier": acc.Identifier,
 			"spec":       spec,
 		},
-		"params":  map[string]any{},
-		"context": map[string]any{"request_id": fmt.Sprintf("daemon:%d", acc.ID)},
+		"params": map[string]any{},
+		"context": map[string]any{
+			"request_id": fmt.Sprintf("daemon:%d", acc.ID),
+			"protocol":   "ndjson.v1",
+			"api_url":    strings.TrimSpace(m.cfg.InternalAPIURL),
+			"api_token":  strings.TrimSpace(m.cfg.InternalAPIToken),
+		},
 	}
-	rawInput, err := json.Marshal(input)
-	if err != nil {
-		return err
+	binary := strings.TrimSpace(runtimeInfo.PythonPath)
+	if binary == "" {
+		binary = strings.TrimSpace(m.cfg.PythonBin)
 	}
-
-	binary := m.cfg.PythonBin
-	if venv := resolveVenvPython(filepath.Dir(scriptPath)); venv != "" {
-		binary = venv
+	if binary == "" {
+		binary = "python"
 	}
 
 	cmd := exec.CommandContext(ctx, binary, scriptPath)
 	cmd.Dir = filepath.Dir(scriptPath)
-	cmd.Env = []string{"PYTHONUNBUFFERED=1", "PYTHONIOENCODING=UTF-8"}
-	cmd.Stdin = bytes.NewReader(rawInput)
+	env := os.Environ()
+	env = append(env, "PYTHONUNBUFFERED=1", "PYTHONIOENCODING=UTF-8")
+	if sdkRoot := resolveOctoSDKRoot(scriptPath); sdkRoot != "" {
+		env = append(env, "PYTHONPATH="+mergePythonPath(os.Getenv("PYTHONPATH"), sdkRoot))
+	}
+	cmd.Env = env
+	cmd.Args = append(cmd.Args, "--serve")
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("stdout pipe: %w", err)
+	}
+	stdinPipe, err := cmd.StdinPipe()
+	if err != nil {
+		return fmt.Errorf("stdin pipe: %w", err)
 	}
 	var stderrBuf bytes.Buffer
 	cmd.Stderr = &stderrBuf
@@ -308,12 +336,27 @@ func (m *Manager) runProcess(ctx context.Context, scriptPath, action string, job
 		return fmt.Errorf("start process: %w", err)
 	}
 
+	runState := m.startLiveRun(jobID, acc.ID)
+	requestEnvelope := map[string]any{
+		"protocol": ipcProtocol,
+		"type":     "request",
+		"id":       fmt.Sprintf("daemon:%d", acc.ID),
+		"payload":  input,
+	}
+	if err := json.NewEncoder(stdinPipe).Encode(requestEnvelope); err != nil {
+		_ = stdinPipe.Close()
+		_ = cmd.Process.Kill()
+		return fmt.Errorf("send request envelope: %w", err)
+	}
+	_ = stdinPipe.Close()
+
 	log := m.logger.With(
 		zap.String("account", acc.Identifier),
 		zap.Int("pid", cmd.Process.Pid),
 	)
 
 	scanner := bufio.NewScanner(stdout)
+	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if len(bytes.TrimSpace(line)) == 0 {
@@ -321,43 +364,110 @@ func (m *Manager) runProcess(ctx context.Context, scriptPath, action string, job
 		}
 
 		var evt struct {
-			Status       string         `json:"status"`
-			Result       map[string]any `json:"result,omitempty"`
-			ErrorCode    string         `json:"error_code,omitempty"`
-			ErrorMessage string         `json:"error_message,omitempty"`
+			Protocol     string          `json:"protocol,omitempty"`
+			Type         string          `json:"type,omitempty"`
+			ID           string          `json:"id,omitempty"`
+			Payload      json.RawMessage `json:"payload,omitempty"`
+			Status       string          `json:"status"`
+			Level        string          `json:"level,omitempty"`
+			Message      string          `json:"message,omitempty"`
+			Result       map[string]any  `json:"result,omitempty"`
+			ErrorCode    string          `json:"error_code,omitempty"`
+			ErrorMessage string          `json:"error_message,omitempty"`
 		}
 		if err := json.Unmarshal(line, &evt); err != nil {
 			log.Warn("daemon: unreadable output line", zap.String("raw", string(line)))
 			continue
 		}
+		if evt.Status == "" && strings.EqualFold(strings.TrimSpace(evt.Protocol), ipcProtocol) && strings.EqualFold(strings.TrimSpace(evt.Type), "response") && len(evt.Payload) > 0 {
+			var response struct {
+				Status       string         `json:"status"`
+				Level        string         `json:"level,omitempty"`
+				Message      string         `json:"message,omitempty"`
+				Result       map[string]any `json:"result,omitempty"`
+				ErrorCode    string         `json:"error_code,omitempty"`
+				ErrorMessage string         `json:"error_message,omitempty"`
+			}
+			if err := json.Unmarshal(evt.Payload, &response); err == nil {
+				evt.Status = response.Status
+				evt.Level = response.Level
+				evt.Message = response.Message
+				evt.Result = response.Result
+				evt.ErrorCode = response.ErrorCode
+				evt.ErrorMessage = response.ErrorMessage
+			}
+		}
 
 		switch evt.Status {
 		case "init_ok":
 			log.Info("daemon: initialized")
+			m.appendLiveLog(runState, formatLogLine("module", "info", "daemon initialized"))
 		case "event":
+			eventLogs := []string{}
+			if msg := strings.TrimSpace(evt.Message); msg != "" {
+				level := normalizeLogLevel(evt.Level)
+				eventLogs = append(eventLogs, formatLogLine("module", level, msg))
+				m.appendLiveLog(runState, formatLogLine("module", level, msg))
+			}
 			log.Info("daemon: event received", zap.Any("result", evt.Result))
-			m.persistEvent(jobID, acc.ID, evt.Result)
+			m.persistEvent(jobID, acc.ID, evt.Result, eventLogs)
+		case "log":
+			msg := strings.TrimSpace(evt.Message)
+			if msg == "" {
+				msg = string(line)
+			}
+			level := normalizeLogLevel(evt.Level)
+			m.appendLiveLog(runState, formatLogLine("module", level, msg))
+			fields := []zap.Field{
+				zap.String("level", level),
+				zap.String("message", msg),
+			}
+			switch level {
+			case "error":
+				log.Error("daemon: module log", fields...)
+			case "warn":
+				log.Warn("daemon: module log", fields...)
+			case "debug":
+				log.Debug("daemon: module log", fields...)
+			default:
+				log.Info("daemon: module log", fields...)
+			}
 		case "done":
 			log.Info("daemon: process signaled done")
+			m.appendLiveLog(runState, formatLogLine("module", "info", "daemon signaled done"))
+			m.finishLiveRun(runState, "", "")
+		case "success":
+			log.Info("daemon: success received", zap.Any("result", evt.Result))
+			m.appendLiveLog(runState, formatLogLine("module", "info", "daemon success"))
 		case "error":
 			log.Warn("daemon: module error",
 				zap.String("code", evt.ErrorCode),
 				zap.String("message", evt.ErrorMessage),
 			)
-			m.persistFailedEvent(jobID, acc.ID, evt.ErrorCode, evt.ErrorMessage)
+			errorLogs := []string{}
+			if msg := strings.TrimSpace(evt.Message); msg != "" {
+				errorLogs = append(errorLogs, formatLogLine("module", normalizeLogLevel(evt.Level), msg))
+				m.appendLiveLog(runState, formatLogLine("module", normalizeLogLevel(evt.Level), msg))
+			}
+			m.persistFailedEvent(jobID, acc.ID, evt.ErrorCode, evt.ErrorMessage, errorLogs)
+			m.finishLiveRun(runState, evt.ErrorCode, evt.ErrorMessage)
 		default:
 			log.Warn("daemon: unknown status", zap.String("status", evt.Status))
 		}
 	}
 
 	if err := cmd.Wait(); err != nil && ctx.Err() == nil {
-		return fmt.Errorf("process exited: %w (stderr=%s)", err, stderrBuf.String())
+		exitErr := fmt.Errorf("process exited: %w (stderr=%s)", err, stderrBuf.String())
+		m.finishLiveRun(runState, "PROCESS_EXITED", exitErr.Error())
+		return exitErr
 	}
+	m.finishLiveRun(runState, "", "")
 	return nil
 }
 
-func (m *Manager) persistEvent(jobID, accountID uint64, result map[string]any) {
+func (m *Manager) persistEvent(jobID, accountID uint64, result map[string]any, logs []string) {
 	resultBytes, _ := json.Marshal(result)
+	logBytes, _ := json.Marshal(logs)
 	now := time.Now()
 	run := model.JobRun{
 		JobID:     jobID,
@@ -365,6 +475,7 @@ func (m *Manager) persistEvent(jobID, accountID uint64, result map[string]any) {
 		WorkerID:  m.cfg.WorkerID,
 		Attempt:   1,
 		Result:    resultBytes,
+		Logs:      logBytes,
 		StartedAt: now,
 		EndedAt:   &now,
 	}
@@ -373,13 +484,15 @@ func (m *Manager) persistEvent(jobID, accountID uint64, result map[string]any) {
 	}
 }
 
-func (m *Manager) persistFailedEvent(jobID, accountID uint64, code, message string) {
+func (m *Manager) persistFailedEvent(jobID, accountID uint64, code, message string, logs []string) {
+	logBytes, _ := json.Marshal(logs)
 	now := time.Now()
 	run := model.JobRun{
 		JobID:        jobID,
 		AccountID:    &accountID,
 		WorkerID:     m.cfg.WorkerID,
 		Attempt:      1,
+		Logs:         logBytes,
 		ErrorCode:    code,
 		ErrorMessage: message,
 		StartedAt:    now,
@@ -390,15 +503,120 @@ func (m *Manager) persistFailedEvent(jobID, accountID uint64, code, message stri
 	}
 }
 
-func resolveVenvPython(dir string) string {
-	var candidate string
-	if runtime.GOOS == "windows" {
-		candidate = filepath.Join(dir, ".venv", "Scripts", "python.exe")
-	} else {
-		candidate = filepath.Join(dir, ".venv", "bin", "python")
+type daemonRunState struct {
+	jobID     uint64
+	accountID uint64
+	runID     uint64
+	logs      []string
+}
+
+func (m *Manager) startLiveRun(jobID, accountID uint64) *daemonRunState {
+	if jobID == 0 || accountID == 0 {
+		return nil
 	}
-	if _, err := os.Stat(candidate); err == nil {
-		return candidate
+	state := &daemonRunState{
+		jobID:     jobID,
+		accountID: accountID,
+	}
+	now := time.Now()
+	run := model.JobRun{
+		JobID:     jobID,
+		AccountID: &accountID,
+		WorkerID:  m.cfg.WorkerID,
+		Attempt:   1,
+		StartedAt: now,
+	}
+	if err := m.db.Create(&run).Error; err != nil {
+		m.logger.Warn("daemon: failed to create live run", zap.Uint64("job_id", jobID), zap.Uint64("account_id", accountID), zap.Error(err))
+		return state
+	}
+	state.runID = run.ID
+
+	m.mu.Lock()
+	m.runs[accountID] = state
+	m.mu.Unlock()
+	return state
+}
+
+func (m *Manager) appendLiveLog(state *daemonRunState, line string) {
+	if state == nil || state.runID == 0 || strings.TrimSpace(line) == "" {
+		return
+	}
+	m.mu.Lock()
+	state.logs = append(state.logs, line)
+	logs := append([]string(nil), state.logs...)
+	m.mu.Unlock()
+
+	rawLogs, _ := json.Marshal(logs)
+	if err := m.db.Model(&model.JobRun{}).Where("id = ?", state.runID).Update("logs", rawLogs).Error; err != nil {
+		m.logger.Warn("daemon: failed to update live run logs", zap.Uint64("run_id", state.runID), zap.Error(err))
+	}
+}
+
+func (m *Manager) finishLiveRun(state *daemonRunState, code, message string) {
+	if state == nil || state.runID == 0 {
+		return
+	}
+	now := time.Now()
+	update := map[string]any{
+		"ended_at": now,
+	}
+	if strings.TrimSpace(code) != "" {
+		update["error_code"] = strings.TrimSpace(code)
+	}
+	if strings.TrimSpace(message) != "" {
+		update["error_message"] = strings.TrimSpace(message)
+	}
+	if err := m.db.Model(&model.JobRun{}).Where("id = ?", state.runID).Updates(update).Error; err != nil {
+		m.logger.Warn("daemon: failed to finalize live run", zap.Uint64("run_id", state.runID), zap.Error(err))
+	}
+
+	m.mu.Lock()
+	delete(m.runs, state.accountID)
+	m.mu.Unlock()
+}
+
+func resolveOctoSDKRoot(scriptPath string) string {
+	dir := filepath.Dir(scriptPath)
+	for {
+		candidate := filepath.Join(dir, "octo.py")
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
 	}
 	return ""
+}
+
+func mergePythonPath(existing, extra string) string {
+	trimmedExtra := strings.TrimSpace(extra)
+	if trimmedExtra == "" {
+		return existing
+	}
+	trimmedExisting := strings.TrimSpace(existing)
+	if trimmedExisting == "" {
+		return trimmedExtra
+	}
+	return trimmedExisting + string(os.PathListSeparator) + trimmedExtra
+}
+
+func formatLogLine(source, level, message string) string {
+	return fmt.Sprintf("[%s][%s] %s", strings.TrimSpace(source), normalizeLogLevel(level), strings.TrimSpace(message))
+}
+
+func normalizeLogLevel(level string) string {
+	normalized := strings.ToLower(strings.TrimSpace(level))
+	switch normalized {
+	case "debug", "info", "warn", "warning", "error":
+		if normalized == "warning" {
+			return "warn"
+		}
+		return normalized
+	default:
+		return "info"
+	}
 }

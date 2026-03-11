@@ -31,3 +31,20 @@ type JobResponse struct {
 	CreatedAt time.Time       `json:"created_at"`
 	UpdatedAt time.Time       `json:"updated_at"`
 }
+
+type JobSummaryResponse struct {
+	Total    int64 `json:"total"`
+	Queued   int64 `json:"queued"`
+	Running  int64 `json:"running"`
+	Done     int64 `json:"done"`
+	Failed   int64 `json:"failed"`
+	Canceled int64 `json:"canceled"`
+	Active   int64 `json:"active"`
+}
+
+type JobRunListResponse struct {
+	Items  []JobRunResponse `json:"items"`
+	Total  int64            `json:"total"`
+	Limit  int              `json:"limit"`
+	Offset int              `json:"offset"`
+}

@@ -12,6 +12,7 @@ type JobRun struct {
     WorkerID     string          `gorm:"type:text;not null;index:idx_job_runs_worker_id" json:"worker_id"`
     Attempt      int             `gorm:"not null;default:1" json:"attempt"`
     Result       json.RawMessage `gorm:"type:jsonb" json:"result,omitempty"`
+    Logs         json.RawMessage `gorm:"type:jsonb" json:"logs,omitempty"`
     ErrorCode    string          `gorm:"type:text" json:"error_code,omitempty"`
     ErrorMessage string          `gorm:"type:text" json:"error_message,omitempty"`
     StartedAt    time.Time       `gorm:"not null" json:"started_at"`

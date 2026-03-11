@@ -10,19 +10,19 @@ import (
 )
 
 type Config struct {
-	Server   ServerConfig   `mapstructure:"server"`
-	Database DatabaseConfig `mapstructure:"database"`
-	Redis    RedisConfig    `mapstructure:"redis"`
-	Asynq    AsynqConfig    `mapstructure:"asynq"`
-	Python   PythonConfig   `mapstructure:"python"`
-	Logging  LoggingConfig  `mapstructure:"logging"`
-	Paths    PathsConfig    `mapstructure:"paths"`
+	Server            ServerConfig            `mapstructure:"server"`
+	Database          DatabaseConfig          `mapstructure:"database"`
+	Redis             RedisConfig             `mapstructure:"redis"`
+	Asynq             AsynqConfig             `mapstructure:"asynq"`
+	Python            PythonConfig            `mapstructure:"python"`
+	OctoModuleService OctoModuleServiceConfig `mapstructure:"octomodule_service"`
+	Logging           LoggingConfig           `mapstructure:"logging"`
+	Paths             PathsConfig             `mapstructure:"paths"`
 }
 
 type ServerConfig struct {
 	Port       string `mapstructure:"port"`
-	HTTPPort   string `mapstructure:"http_port"`   // plain-HTTP redirect listener; empty = disabled
-	TLS        bool   `mapstructure:"tls"`         // enable HTTPS (default: true)
+	TLS        bool   `mapstructure:"tls"` // enable HTTPS (default: true)
 	Mode       string `mapstructure:"mode"`
 	WebDistDir string `mapstructure:"web_dist_dir"`
 }
@@ -85,9 +85,16 @@ type PythonConfig struct {
 
 func (c PythonConfig) Timeout() time.Duration {
 	if c.TimeoutSeconds <= 0 {
-		return 60 * time.Second
+		return 0
 	}
 	return time.Duration(c.TimeoutSeconds) * time.Second
+}
+
+type OctoModuleServiceConfig struct {
+	URL      string `mapstructure:"url"`
+	Listen   string `mapstructure:"listen"`
+	Token    string `mapstructure:"token"`
+	Embedded bool   `mapstructure:"embedded"`
 }
 
 type LoggingConfig struct {
@@ -105,7 +112,6 @@ func Load() (Config, error) {
 	v.SetConfigType("yaml")
 
 	v.SetDefault("server.port", "443")
-	v.SetDefault("server.http_port", "80")
 	v.SetDefault("server.tls", true)
 	v.SetDefault("server.mode", "release")
 	v.SetDefault("server.web_dist_dir", "")
@@ -121,8 +127,13 @@ func Load() (Config, error) {
 	v.SetDefault("asynq.concurrency", 10)
 
 	v.SetDefault("python.bin", "python")
-	v.SetDefault("python.script", "../scripts/python/account_manager.py")
-	v.SetDefault("python.timeout_seconds", 60)
+	v.SetDefault("python.script", "")
+	v.SetDefault("python.timeout_seconds", 0)
+
+	v.SetDefault("octomodule_service.url", "http://127.0.0.1:8091")
+	v.SetDefault("octomodule_service.listen", ":8091")
+	v.SetDefault("octomodule_service.token", "")
+	v.SetDefault("octomodule_service.embedded", true)
 
 	v.SetDefault("logging.file", "")
 	v.SetDefault("logging.level", "info")

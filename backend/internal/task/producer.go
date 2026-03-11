@@ -53,7 +53,23 @@ func (p *Producer) EnqueueBatchEmailVerify(ctx context.Context, jobID uint64, re
 }
 
 func (p *Producer) EnqueueBatchEmailRegister(ctx context.Context, jobID uint64, req dto.BatchRegisterEmailRequest) (string, error) {
-	return p.enqueueTaskID(ctx, TypeBatchEmailRegister, BatchEmailRegisterPayload{JobID: jobID, Request: req})
+	if p == nil || p.client == nil {
+		return "", errors.New("asynq client is not configured")
+	}
+	rawPayload, err := json.Marshal(BatchEmailRegisterPayload{JobID: jobID, Request: req})
+	if err != nil {
+		return "", err
+	}
+	taskItem := asynq.NewTask(TypeBatchEmailRegister, rawPayload)
+	info, err := p.client.EnqueueContext(ctx, taskItem,
+		asynq.Queue("default"),
+		asynq.MaxRetry(1),
+		asynq.Timeout(0),
+	)
+	if err != nil {
+		return "", err
+	}
+	return info.ID, nil
 }
 
 func (p *Producer) EnqueueBatchEmailImportGraph(ctx context.Context, jobID uint64, req dto.BatchImportGraphEmailTaskRequest) (string, error) {

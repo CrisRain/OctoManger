@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Play, RefreshCw, CheckCircle2, AlertCircle, Loader2, Pencil, FilePlus, Package } from "lucide-react";
+import { Play, RefreshCw, CheckCircle2, AlertCircle, Loader2, Pencil, FilePlus, Package, Wrench } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -26,11 +26,15 @@ import { compactId, formatDateTime } from "@/lib/format";
 import type { JobRun, OctoModuleFileInfo, OctoModuleInfo, VenvInfo } from "@/types";
 
 const HISTORY_PAGE_SIZE = 20;
+const octoModuleDaemonOnly = true;
 
 export function OctoModulesPage() {
   const [modules, setModules] = useState<OctoModuleInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+
+  // Ensure state
+  const [ensuring, setEnsuring] = useState(false);
 
   // Dry-run form dialog state
   const [dryRunOpen, setDryRunOpen] = useState(false);
@@ -158,15 +162,18 @@ export function OctoModulesPage() {
     }
   };
 
-  const handleEnsure = async (typeKey: string) => {
+  const handleEnsure = async () => {
+    if (!selectedModule) return;
+    setEnsuring(true);
     try {
-      const res = await api.ensureOctoModule(typeKey);
-      setResultTitle(`Ensure: ${typeKey}`);
-      setResultData(res);
-      setResultOpen(true);
-      toast.success("Ensure 完成");
+      const res = await api.ensureOctoModule(selectedModule.type_key);
+      toast.success(res.created ? "模块脚本已创建" : "模块已就绪");
+      setSelectedModule(res.module);
+      setModules((prev) => prev.map((m) => (m.type_key === res.module.type_key ? res.module : m)));
     } catch (error) {
       toast.error(extractErrorMessage(error));
+    } finally {
+      setEnsuring(false);
     }
   };
 
@@ -374,6 +381,30 @@ export function OctoModulesPage() {
     }
   };
 
+  const handleInstallPlaywright = async () => {
+    if (!selectedModule) return;
+    setInstalling(true);
+    setInstallOutput("");
+    try {
+      const res = await api.installModuleDeps(selectedModule.type_key, {
+        install_playwright: true,
+        playwright_browser: "chromium",
+      });
+      setInstallOutput(res.output);
+      if (res.success) {
+        toast.success("Playwright 浏览器安装成功");
+      } else {
+        toast.error("Playwright 浏览器安装失败，请查看输出");
+      }
+      const venv = await api.getModuleVenv(selectedModule.type_key);
+      setVenvInfo(venv);
+    } catch (error) {
+      toast.error(extractErrorMessage(error));
+    } finally {
+      setInstalling(false);
+    }
+  };
+
   const statusBadge = useMemo(() => {
     if (!selectedModule) return null;
     if (selectedModule.exists) {
@@ -395,10 +426,14 @@ export function OctoModulesPage() {
     return <Badge variant="secondary">未知</Badge>;
   }, [selectedModule]);
 
+  const headerDescription = octoModuleDaemonOnly
+    ? '扫描账号类型并同步对应的 Python 模块，点击"管理"可编辑脚本、安装依赖及初始化。Daemon 模式下不支持试运行。'
+    : '扫描账号类型并同步对应的 Python 模块，点击"管理"可编辑脚本、安装依赖及初始化。';
+
   return (
     <div className="space-y-4">
-      <PageHeader title="Octo 模块" description="管理 Octo 模块，运行诊断并编辑模块资产。">
-        <Button onClick={handleSync} disabled={syncing}>
+      <PageHeader title="Octo 模块" description={headerDescription}>
+        <Button onClick={handleSync} disabled={syncing} title="扫描所有账号类型，为缺少模块记录的类型自动创建">
           <RefreshCw className={`mr-2 h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
           同步模块
         </Button>
@@ -451,28 +486,20 @@ export function OctoModulesPage() {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => openManage(module)}
-                          title="管理"
-                        >
-                          <Pencil className="mr-1 h-3 w-3" />
-                          管理
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
                           onClick={() => openDryRunForm(module.type_key)}
-                          title="试运行"
+                          disabled={octoModuleDaemonOnly}
+                          title={octoModuleDaemonOnly ? "Daemon 模式下不支持试运行" : "试运行"}
                         >
                           <Play className="mr-1 h-3 w-3" />
                           试运行
                         </Button>
                         <Button
                           size="sm"
-                          onClick={() => void handleEnsure(module.type_key)}
-                          title="确保初始化"
+                          variant="outline"
+                          onClick={() => openManage(module)}
                         >
-                          <CheckCircle2 className="mr-1 h-3 w-3" />
-                          初始化
+                          <Pencil className="mr-1 h-3 w-3" />
+                          管理
                         </Button>
                       </div>
                     </TableCell>
@@ -528,6 +555,31 @@ export function OctoModulesPage() {
                       {selectedModule.error}
                     </div>
                   ) : null}
+                  <div className="flex gap-2 pt-1">
+                    <Button
+                      size="sm"
+                      variant={selectedModule.exists ? "outline" : "default"}
+                      onClick={() => void handleEnsure()}
+                      disabled={ensuring}
+                    >
+                      {ensuring ? (
+                        <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Wrench className="mr-1.5 h-3.5 w-3.5" />
+                      )}
+                      {selectedModule.exists ? "重新初始化脚本" : "初始化脚本"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => { setManageOpen(false); openDryRunForm(selectedModule.type_key); }}
+                      disabled={octoModuleDaemonOnly}
+                      title={octoModuleDaemonOnly ? "Daemon 模式下不支持试运行" : "试运行"}
+                    >
+                      <Play className="mr-1.5 h-3.5 w-3.5" />
+                      试运行
+                    </Button>
+                  </div>
                 </div>
               ) : null}
             </TabsContent>
@@ -700,6 +752,24 @@ export function OctoModulesPage() {
                     <p className="text-xs text-muted-foreground">多个包用逗号或换行分隔。</p>
                   </div>
 
+                  <div className="space-y-2">
+                    <Label>Playwright 浏览器</Label>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => void handleInstallPlaywright()}
+                        disabled={installing}
+                      >
+                        {installing && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+                        安装 Chromium
+                      </Button>
+                      <p className="text-xs text-muted-foreground">
+                        安装 `playwright` Python 包后，还需要安装浏览器内核。
+                      </p>
+                    </div>
+                  </div>
+
                   {/* Install output */}
                   {installOutput && (
                     <div className="space-y-1">
@@ -731,6 +801,7 @@ export function OctoModulesPage() {
                       <TableHead>账号</TableHead>
                       <TableHead>开始时间</TableHead>
                       <TableHead>结束时间</TableHead>
+                      <TableHead>日志</TableHead>
                       <TableHead>错误信息</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -746,6 +817,24 @@ export function OctoModulesPage() {
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">
                           {run.ended_at ? formatDateTime(run.ended_at) : "-"}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {run.logs?.length ? (
+                            <div className="max-w-[360px] space-y-1">
+                              <div className="text-[11px] text-muted-foreground">共 {run.logs.length} 条</div>
+                              <ScrollArea className="h-20 rounded border bg-muted/50 px-2 py-1">
+                                <div className="space-y-1 font-mono text-[11px] leading-4">
+                                  {run.logs.map((line, index) => (
+                                    <div key={`${run.id}-${index}`} className="break-all">
+                                      {line}
+                                    </div>
+                                  ))}
+                                </div>
+                              </ScrollArea>
+                            </div>
+                          ) : (
+                            "-"
+                          )}
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">
                           {run.error_message || "-"}

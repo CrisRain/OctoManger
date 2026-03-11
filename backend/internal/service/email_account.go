@@ -470,6 +470,7 @@ func normalizeEmailProvider(provider string, address string) string {
 }
 
 type BatchRegisterCandidate struct {
+	Index       int
 	Address     string
 	Provider    string
 	Status      int16
@@ -480,6 +481,7 @@ type EmailBatchPreparedResult struct {
 	Requested  int
 	Provider   string
 	Candidates []BatchRegisterCandidate
+	Failures   []dto.BatchRegisterEmailFailure
 }
 
 type EmailBatchRegistrar interface {
@@ -557,7 +559,7 @@ func (r *PythonEmailBatchRegistrar) Prepare(
 		return EmailBatchPreparedResult{}, errors.New(message)
 	}
 
-	candidates, provider, requested, err := parseBatchRegisterCandidates(output.Result)
+	candidates, failures, provider, requested, err := parseBatchRegisterCandidates(output.Result)
 	if err != nil {
 		return EmailBatchPreparedResult{}, err
 	}
@@ -566,18 +568,23 @@ func (r *PythonEmailBatchRegistrar) Prepare(
 		Requested:  requested,
 		Provider:   provider,
 		Candidates: candidates,
+		Failures:   failures,
 	}, nil
 }
 
 func parseBatchRegisterCandidates(
 	result map[string]any,
-) ([]BatchRegisterCandidate, string, int, error) {
+) ([]BatchRegisterCandidate, []dto.BatchRegisterEmailFailure, string, int, error) {
 	if result == nil {
-		return nil, "", 0, errors.New("python result is empty")
+		return nil, nil, "", 0, errors.New("python result is empty")
 	}
 
 	rawProvider := strings.TrimSpace(toString(result["provider"]))
 	requested := toInt(result["requested"])
+	failures, err := parseBatchRegisterFailures(result["failures"])
+	if err != nil {
+		return nil, nil, "", 0, err
+	}
 
 	rawCandidates, ok := result["generated"].([]any)
 	if !ok {
@@ -586,44 +593,78 @@ func parseBatchRegisterCandidates(
 		}
 	}
 	if len(rawCandidates) == 0 {
-		return []BatchRegisterCandidate{}, rawProvider, requested, nil
+		return []BatchRegisterCandidate{}, failures, rawProvider, requested, nil
 	}
 
 	candidates := make([]BatchRegisterCandidate, 0, len(rawCandidates))
 	for i, entry := range rawCandidates {
 		item, ok := entry.(map[string]any)
 		if !ok {
-			return nil, "", 0, fmt.Errorf("invalid generated[%d]: must be object", i)
+			return nil, nil, "", 0, fmt.Errorf("invalid generated[%d]: must be object", i)
 		}
 
 		address := strings.TrimSpace(toString(item["address"]))
 		if address == "" {
-			return nil, "", 0, fmt.Errorf("invalid generated[%d]: address is required", i)
+			return nil, nil, "", 0, fmt.Errorf("invalid generated[%d]: address is required", i)
 		}
 		provider := strings.TrimSpace(toString(item["provider"]))
 
 		rawGraphConfig, exists := item["graph_config"]
 		if !exists {
-			return nil, "", 0, fmt.Errorf("invalid generated[%d].graph_config: graph_config is required", i)
+			return nil, nil, "", 0, fmt.Errorf("invalid generated[%d].graph_config: graph_config is required", i)
 		}
 		graphConfigRaw, err := toRawJSONObject(rawGraphConfig, "{}")
 		if err != nil {
-			return nil, "", 0, fmt.Errorf("invalid generated[%d].graph_config: %w", i, err)
+			return nil, nil, "", 0, fmt.Errorf("invalid generated[%d].graph_config: %w", i, err)
 		}
 		status := int16(0)
 		if rawStatus, exists := item["status"]; exists {
 			parsed := toInt(rawStatus)
 			status = int16(parsed)
 		}
+		index := i
+		if rawIndex, exists := item["index"]; exists {
+			index = toInt(rawIndex)
+		}
 
 		candidates = append(candidates, BatchRegisterCandidate{
+			Index:       index,
 			Address:     address,
 			Provider:    provider,
 			Status:      status,
 			GraphConfig: graphConfigRaw,
 		})
 	}
-	return candidates, rawProvider, requested, nil
+	return candidates, failures, rawProvider, requested, nil
+}
+
+func parseBatchRegisterFailures(value any) ([]dto.BatchRegisterEmailFailure, error) {
+	rawFailures, ok := value.([]any)
+	if !ok || len(rawFailures) == 0 {
+		return []dto.BatchRegisterEmailFailure{}, nil
+	}
+
+	failures := make([]dto.BatchRegisterEmailFailure, 0, len(rawFailures))
+	for i, entry := range rawFailures {
+		item, ok := entry.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("invalid failures[%d]: must be object", i)
+		}
+
+		rawMessage, exists := item["message"]
+		message := strings.TrimSpace(toString(rawMessage))
+		if !exists || rawMessage == nil || message == "" || message == "<nil>" {
+			return nil, fmt.Errorf("invalid failures[%d].message: message is required", i)
+		}
+
+		failures = append(failures, dto.BatchRegisterEmailFailure{
+			Index:   toInt(item["index"]),
+			Address: strings.TrimSpace(toString(item["address"])),
+			Code:    strings.TrimSpace(toString(item["code"])),
+			Message: message,
+		})
+	}
+	return failures, nil
 }
 
 func toRawJSONObject(value any, fallback string) (json.RawMessage, error) {

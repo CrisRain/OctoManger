@@ -14,6 +14,7 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
+	"octomanger/backend/internal/dto"
 	"octomanger/backend/internal/model"
 	"octomanger/backend/internal/repository"
 	"octomanger/backend/internal/service"
@@ -38,6 +39,12 @@ type BatchHandler struct {
 	jobRunRepo     repository.JobRunRepository
 	batchRegistrar service.EmailBatchRegistrar
 	workerID       string
+}
+
+type batchJobRunTracker struct {
+	handler *BatchHandler
+	run     *model.JobRun
+	logs    []string
 }
 
 func NewBatchHandler(opts BatchHandlerOptions) *BatchHandler {
@@ -75,6 +82,8 @@ func (h *BatchHandler) ProcessAccountBatchPatch(ctx context.Context, t *asynq.Ta
 	if !h.beginTrackedJob(ctx, payload.JobID) {
 		return nil
 	}
+	tracker := h.startTrackedJobRun(ctx, payload.JobID)
+	tracker.AppendLog(ctx, "batch account patch started")
 
 	req := payload.Request
 	success := 0
@@ -84,10 +93,12 @@ func (h *BatchHandler) ProcessAccountBatchPatch(ctx context.Context, t *asynq.Ta
 	for _, id := range req.IDs {
 		if h.isTrackedJobCanceled(ctx, payload.JobID) {
 			canceled = true
+			tracker.AppendLog(ctx, "batch account patch canceled")
 			break
 		}
 		if id == 0 {
 			failed++
+			tracker.AppendLog(ctx, fmt.Sprintf("skip invalid account id: %d", id))
 			continue
 		}
 		item, getErr := h.accountRepo.GetByID(ctx, id)
@@ -96,6 +107,7 @@ func (h *BatchHandler) ProcessAccountBatchPatch(ctx context.Context, t *asynq.Ta
 				h.logger.Warn("batch account patch: failed to load account", zap.Uint64("account_id", id), zap.Error(getErr))
 			}
 			failed++
+			tracker.AppendLog(ctx, fmt.Sprintf("failed to load account %d: %v", id, getErr))
 			continue
 		}
 		if req.Status != nil {
@@ -107,17 +119,22 @@ func (h *BatchHandler) ProcessAccountBatchPatch(ctx context.Context, t *asynq.Ta
 		if updateErr := h.accountRepo.Update(ctx, item); updateErr != nil {
 			h.logger.Warn("batch account patch: failed to update account", zap.Uint64("account_id", id), zap.Error(updateErr))
 			failed++
+			tracker.AppendLog(ctx, fmt.Sprintf("failed to update account %d: %v", id, updateErr))
 			continue
 		}
 		success++
 	}
 
-	h.completeTrackedJob(ctx, payload.JobID, map[string]any{
+	result := map[string]any{
 		"total":    len(req.IDs),
 		"success":  success,
 		"failed":   failed,
 		"canceled": canceled,
-	}, batchSummaryStatus(canceled, failed))
+	}
+	status := batchSummaryStatus(canceled, failed)
+	tracker.AppendLog(ctx, fmt.Sprintf("batch account patch finished: success=%d failed=%d canceled=%t", success, failed, canceled))
+	tracker.Finalize(ctx, result, status)
+	h.completeTrackedJob(ctx, payload.JobID, status)
 
 	h.logger.Info("batch account patch finished",
 		zap.Int("total", len(req.IDs)),
@@ -137,6 +154,8 @@ func (h *BatchHandler) ProcessAccountBatchDelete(ctx context.Context, t *asynq.T
 	if !h.beginTrackedJob(ctx, payload.JobID) {
 		return nil
 	}
+	tracker := h.startTrackedJobRun(ctx, payload.JobID)
+	tracker.AppendLog(ctx, "batch account delete started")
 
 	req := payload.Request
 	success := 0
@@ -146,10 +165,12 @@ func (h *BatchHandler) ProcessAccountBatchDelete(ctx context.Context, t *asynq.T
 	for _, id := range req.IDs {
 		if h.isTrackedJobCanceled(ctx, payload.JobID) {
 			canceled = true
+			tracker.AppendLog(ctx, "batch account delete canceled")
 			break
 		}
 		if id == 0 {
 			failed++
+			tracker.AppendLog(ctx, fmt.Sprintf("skip invalid account id: %d", id))
 			continue
 		}
 		if _, getErr := h.accountRepo.GetByID(ctx, id); getErr != nil {
@@ -157,22 +178,28 @@ func (h *BatchHandler) ProcessAccountBatchDelete(ctx context.Context, t *asynq.T
 				h.logger.Warn("batch account delete: failed to load account", zap.Uint64("account_id", id), zap.Error(getErr))
 			}
 			failed++
+			tracker.AppendLog(ctx, fmt.Sprintf("failed to load account %d: %v", id, getErr))
 			continue
 		}
 		if deleteErr := h.accountRepo.Delete(ctx, id); deleteErr != nil {
 			h.logger.Warn("batch account delete: failed to delete account", zap.Uint64("account_id", id), zap.Error(deleteErr))
 			failed++
+			tracker.AppendLog(ctx, fmt.Sprintf("failed to delete account %d: %v", id, deleteErr))
 			continue
 		}
 		success++
 	}
 
-	h.completeTrackedJob(ctx, payload.JobID, map[string]any{
+	result := map[string]any{
 		"total":    len(req.IDs),
 		"success":  success,
 		"failed":   failed,
 		"canceled": canceled,
-	}, batchSummaryStatus(canceled, failed))
+	}
+	status := batchSummaryStatus(canceled, failed)
+	tracker.AppendLog(ctx, fmt.Sprintf("batch account delete finished: success=%d failed=%d canceled=%t", success, failed, canceled))
+	tracker.Finalize(ctx, result, status)
+	h.completeTrackedJob(ctx, payload.JobID, status)
 
 	h.logger.Info("batch account delete finished",
 		zap.Int("total", len(req.IDs)),
@@ -192,6 +219,8 @@ func (h *BatchHandler) ProcessEmailBatchDelete(ctx context.Context, t *asynq.Tas
 	if !h.beginTrackedJob(ctx, payload.JobID) {
 		return nil
 	}
+	tracker := h.startTrackedJobRun(ctx, payload.JobID)
+	tracker.AppendLog(ctx, "batch email delete started")
 
 	req := payload.Request
 	success := 0
@@ -201,10 +230,12 @@ func (h *BatchHandler) ProcessEmailBatchDelete(ctx context.Context, t *asynq.Tas
 	for _, id := range req.IDs {
 		if h.isTrackedJobCanceled(ctx, payload.JobID) {
 			canceled = true
+			tracker.AppendLog(ctx, "batch email delete canceled")
 			break
 		}
 		if id == 0 {
 			failed++
+			tracker.AppendLog(ctx, fmt.Sprintf("skip invalid email account id: %d", id))
 			continue
 		}
 		if _, getErr := h.emailRepo.GetByID(ctx, id); getErr != nil {
@@ -212,22 +243,28 @@ func (h *BatchHandler) ProcessEmailBatchDelete(ctx context.Context, t *asynq.Tas
 				h.logger.Warn("batch email delete: failed to load account", zap.Uint64("account_id", id), zap.Error(getErr))
 			}
 			failed++
+			tracker.AppendLog(ctx, fmt.Sprintf("failed to load email account %d: %v", id, getErr))
 			continue
 		}
 		if deleteErr := h.emailRepo.Delete(ctx, id); deleteErr != nil {
 			h.logger.Warn("batch email delete: failed to delete account", zap.Uint64("account_id", id), zap.Error(deleteErr))
 			failed++
+			tracker.AppendLog(ctx, fmt.Sprintf("failed to delete email account %d: %v", id, deleteErr))
 			continue
 		}
 		success++
 	}
 
-	h.completeTrackedJob(ctx, payload.JobID, map[string]any{
+	result := map[string]any{
 		"total":    len(req.IDs),
 		"success":  success,
 		"failed":   failed,
 		"canceled": canceled,
-	}, batchSummaryStatus(canceled, failed))
+	}
+	status := batchSummaryStatus(canceled, failed)
+	tracker.AppendLog(ctx, fmt.Sprintf("batch email delete finished: success=%d failed=%d canceled=%t", success, failed, canceled))
+	tracker.Finalize(ctx, result, status)
+	h.completeTrackedJob(ctx, payload.JobID, status)
 
 	h.logger.Info("batch email delete finished",
 		zap.Int("total", len(req.IDs)),
@@ -247,6 +284,8 @@ func (h *BatchHandler) ProcessEmailBatchVerify(ctx context.Context, t *asynq.Tas
 	if !h.beginTrackedJob(ctx, payload.JobID) {
 		return nil
 	}
+	tracker := h.startTrackedJobRun(ctx, payload.JobID)
+	tracker.AppendLog(ctx, "batch email verify started")
 
 	req := payload.Request
 	success := 0
@@ -256,10 +295,12 @@ func (h *BatchHandler) ProcessEmailBatchVerify(ctx context.Context, t *asynq.Tas
 	for _, id := range req.IDs {
 		if h.isTrackedJobCanceled(ctx, payload.JobID) {
 			canceled = true
+			tracker.AppendLog(ctx, "batch email verify canceled")
 			break
 		}
 		if id == 0 {
 			failed++
+			tracker.AppendLog(ctx, fmt.Sprintf("skip invalid email account id: %d", id))
 			continue
 		}
 		item, getErr := h.emailRepo.GetByID(ctx, id)
@@ -268,23 +309,29 @@ func (h *BatchHandler) ProcessEmailBatchVerify(ctx context.Context, t *asynq.Tas
 				h.logger.Warn("batch email verify: failed to load account", zap.Uint64("account_id", id), zap.Error(getErr))
 			}
 			failed++
+			tracker.AppendLog(ctx, fmt.Sprintf("failed to load email account %d: %v", id, getErr))
 			continue
 		}
 		item.Status = 1
 		if updateErr := h.emailRepo.Update(ctx, item); updateErr != nil {
 			h.logger.Warn("batch email verify: failed to update account", zap.Uint64("account_id", id), zap.Error(updateErr))
 			failed++
+			tracker.AppendLog(ctx, fmt.Sprintf("failed to verify email account %d: %v", id, updateErr))
 			continue
 		}
 		success++
 	}
 
-	h.completeTrackedJob(ctx, payload.JobID, map[string]any{
+	result := map[string]any{
 		"total":    len(req.IDs),
 		"success":  success,
 		"failed":   failed,
 		"canceled": canceled,
-	}, batchSummaryStatus(canceled, failed))
+	}
+	status := batchSummaryStatus(canceled, failed)
+	tracker.AppendLog(ctx, fmt.Sprintf("batch email verify finished: success=%d failed=%d canceled=%t", success, failed, canceled))
+	tracker.Finalize(ctx, result, status)
+	h.completeTrackedJob(ctx, payload.JobID, status)
 
 	h.logger.Info("batch email verify finished",
 		zap.Int("total", len(req.IDs)),
@@ -304,48 +351,48 @@ func (h *BatchHandler) ProcessEmailBatchRegister(ctx context.Context, t *asynq.T
 	if !h.beginTrackedJob(ctx, payload.JobID) {
 		return nil
 	}
+	tracker := h.startTrackedJobRun(ctx, payload.JobID)
+	tracker.AppendLog(ctx, "batch email register started")
 
 	req := payload.Request
 	if req.Count <= 0 || req.Count > 200 {
-		h.completeTrackedJob(ctx, payload.JobID, map[string]any{
-			"requested": req.Count,
-			"error":     "count must be between 1 and 200",
-		}, jobStatusFailed)
+		h.completeTrackedJob(ctx, payload.JobID, jobStatusFailed)
+		tracker.AppendLog(ctx, "batch email register rejected: invalid count")
+		tracker.Finalize(ctx, map[string]any{"requested": req.Count, "error": "count must be between 1 and 200"}, jobStatusFailed)
 		h.logger.Warn("batch email register rejected: invalid count", zap.Int("count", req.Count))
 		return asynq.SkipRetry
 	}
 	if req.Status != 0 && req.Status != 1 {
-		h.completeTrackedJob(ctx, payload.JobID, map[string]any{
-			"requested": req.Count,
-			"error":     "status must be 0 or 1",
-		}, jobStatusFailed)
+		h.completeTrackedJob(ctx, payload.JobID, jobStatusFailed)
+		tracker.AppendLog(ctx, "batch email register rejected: invalid status")
+		tracker.Finalize(ctx, map[string]any{"requested": req.Count, "error": "status must be 0 or 1"}, jobStatusFailed)
 		h.logger.Warn("batch email register rejected: invalid status", zap.Int16("status", req.Status))
 		return asynq.SkipRetry
 	}
 	if h.batchRegistrar == nil {
-		h.completeTrackedJob(ctx, payload.JobID, map[string]any{
-			"requested": req.Count,
-			"error":     "batch registrar is not configured",
-		}, jobStatusFailed)
+		h.completeTrackedJob(ctx, payload.JobID, jobStatusFailed)
+		tracker.AppendLog(ctx, "batch email register rejected: batch registrar is not configured")
+		tracker.Finalize(ctx, map[string]any{"requested": req.Count, "error": "batch registrar is not configured"}, jobStatusFailed)
 		return asynq.SkipRetry
 	}
 
 	prepared, err := h.batchRegistrar.Prepare(ctx, req)
 	if err != nil {
-		h.completeTrackedJob(ctx, payload.JobID, map[string]any{
-			"requested": req.Count,
-			"error":     err.Error(),
-		}, jobStatusFailed)
+		h.completeTrackedJob(ctx, payload.JobID, jobStatusFailed)
+		tracker.AppendLog(ctx, fmt.Sprintf("batch email register prepare failed: %v", err))
+		tracker.Finalize(ctx, map[string]any{"requested": req.Count, "error": err.Error()}, jobStatusFailed)
 		h.logger.Error("batch email register prepare failed", zap.Error(err))
 		return nil
 	}
+	tracker.AppendLog(ctx, fmt.Sprintf("batch email register prepared %d candidates", len(prepared.Candidates)))
 
 	created := 0
-	failed := 0
+	failures := append([]dto.BatchRegisterEmailFailure(nil), prepared.Failures...)
 	canceled := false
 	for _, candidate := range prepared.Candidates {
 		if h.isTrackedJobCanceled(ctx, payload.JobID) {
 			canceled = true
+			tracker.AppendLog(ctx, "batch email register canceled")
 			break
 		}
 
@@ -364,19 +411,32 @@ func (h *BatchHandler) ProcessEmailBatchRegister(ctx context.Context, t *asynq.T
 				zap.String("address", candidate.Address),
 				zap.Error(createErr),
 			)
-			failed++
+			tracker.AppendLog(ctx, fmt.Sprintf("failed to create email account %s: %v", candidate.Address, createErr))
+			failures = append(failures, dto.BatchRegisterEmailFailure{
+				Index:   candidate.Index,
+				Address: candidate.Address,
+				Code:    "CREATE_FAILED",
+				Message: createErr.Error(),
+			})
 			continue
 		}
 		created++
+		tracker.AppendLog(ctx, fmt.Sprintf("created email account %s", candidate.Address))
 	}
+	failed := len(failures)
 
-	h.completeTrackedJob(ctx, payload.JobID, map[string]any{
+	result := map[string]any{
 		"requested": req.Count,
 		"generated": len(prepared.Candidates),
 		"created":   created,
 		"failed":    failed,
+		"failures":  failures,
 		"canceled":  canceled,
-	}, batchSummaryStatus(canceled, failed))
+	}
+	status := batchSummaryStatus(canceled, failed)
+	tracker.AppendLog(ctx, fmt.Sprintf("batch email register finished: created=%d failed=%d canceled=%t", created, failed, canceled))
+	tracker.Finalize(ctx, result, status)
+	h.completeTrackedJob(ctx, payload.JobID, status)
 
 	h.logger.Info("batch email register finished",
 		zap.Int("requested", req.Count),
@@ -397,12 +457,13 @@ func (h *BatchHandler) ProcessEmailBatchImportGraph(ctx context.Context, t *asyn
 	if !h.beginTrackedJob(ctx, payload.JobID) {
 		return nil
 	}
+	tracker := h.startTrackedJobRun(ctx, payload.JobID)
+	tracker.AppendLog(ctx, "batch email graph import started")
 
 	if h.isTrackedJobCanceled(ctx, payload.JobID) {
-		h.completeTrackedJob(ctx, payload.JobID, map[string]any{
-			"total":    len(payload.Request.Rows),
-			"canceled": true,
-		}, jobStatusCanceled)
+		tracker.AppendLog(ctx, "batch email graph import canceled before execution")
+		tracker.Finalize(ctx, map[string]any{"total": len(payload.Request.Rows), "canceled": true}, jobStatusCanceled)
+		h.completeTrackedJob(ctx, payload.JobID, jobStatusCanceled)
 		return nil
 	}
 
@@ -432,7 +493,9 @@ func (h *BatchHandler) ProcessEmailBatchImportGraph(ctx context.Context, t *asyn
 	if status == jobStatusCanceled {
 		summary["canceled"] = true
 	}
-	h.completeTrackedJob(ctx, payload.JobID, summary, status)
+	tracker.AppendLog(ctx, fmt.Sprintf("batch email graph import finished: created=%d failed=%d status=%d", result.Created, result.Failed, status))
+	tracker.Finalize(ctx, summary, status)
+	h.completeTrackedJob(ctx, payload.JobID, status)
 
 	if execErr != nil {
 		h.logger.Error("batch email graph import failed", zap.Error(execErr))
@@ -524,11 +587,10 @@ func (h *BatchHandler) isTrackedJobCanceled(ctx context.Context, jobID uint64) b
 	return job.Status == jobStatusCanceled
 }
 
-func (h *BatchHandler) completeTrackedJob(ctx context.Context, jobID uint64, result any, status int16) {
+func (h *BatchHandler) completeTrackedJob(ctx context.Context, jobID uint64, status int16) {
 	if jobID == 0 {
 		return
 	}
-	h.persistTrackedJobRun(ctx, jobID, result, status)
 	if h.jobRepo == nil {
 		return
 	}
@@ -537,47 +599,68 @@ func (h *BatchHandler) completeTrackedJob(ctx context.Context, jobID uint64, res
 	}
 }
 
-func (h *BatchHandler) persistTrackedJobRun(ctx context.Context, jobID uint64, result any, status int16) {
-	if h.jobRunRepo == nil {
+func (h *BatchHandler) startTrackedJobRun(ctx context.Context, jobID uint64) *batchJobRunTracker {
+	tracker := &batchJobRunTracker{handler: h}
+	if jobID == 0 || h.jobRunRepo == nil {
+		return tracker
+	}
+	run := &model.JobRun{
+		JobID:     jobID,
+		WorkerID:  h.workerID,
+		Attempt:   1,
+		StartedAt: time.Now().UTC(),
+	}
+	if err := h.jobRunRepo.Create(ctx, run); err != nil {
+		h.logger.Warn("failed to create tracked batch job run", zap.Uint64("job_id", jobID), zap.Error(err))
+		return tracker
+	}
+	tracker.run = run
+	return tracker
+}
+
+func (t *batchJobRunTracker) AppendLog(ctx context.Context, message string) {
+	if t == nil || t.handler == nil || t.run == nil || strings.TrimSpace(message) == "" {
 		return
 	}
+	t.logs = append(t.logs, message)
+	rawLogs, err := json.Marshal(t.logs)
+	if err != nil {
+		t.handler.logger.Warn("failed to marshal tracked batch logs", zap.Uint64("job_id", t.run.JobID), zap.Error(err))
+		return
+	}
+	t.run.Logs = rawLogs
+	if err := t.handler.jobRunRepo.Update(ctx, t.run); err != nil {
+		t.handler.logger.Warn("failed to update tracked batch logs", zap.Uint64("run_id", t.run.ID), zap.Error(err))
+	}
+}
 
-	startedAt := time.Now().UTC()
-	endedAt := startedAt
-
-	var resultJSON []byte
+func (t *batchJobRunTracker) Finalize(ctx context.Context, result any, status int16) {
+	if t == nil || t.handler == nil || t.run == nil {
+		return
+	}
 	if result != nil {
 		raw, err := json.Marshal(result)
 		if err != nil {
-			h.logger.Warn("failed to marshal batch job result", zap.Uint64("job_id", jobID), zap.Error(err))
+			t.handler.logger.Warn("failed to marshal tracked batch result", zap.Uint64("job_id", t.run.JobID), zap.Error(err))
 		} else {
-			resultJSON = raw
+			t.run.Result = raw
 		}
 	}
 
-	errorCode := ""
-	errorMessage := ""
+	t.run.ErrorCode = ""
+	t.run.ErrorMessage = ""
 	if status == jobStatusFailed {
-		errorCode = "BATCH_TASK_FAILED"
-		errorMessage = "batch task finished with failures"
+		t.run.ErrorCode = "BATCH_TASK_FAILED"
+		t.run.ErrorMessage = "batch task finished with failures"
 	}
 	if status == jobStatusCanceled {
-		errorCode = "CANCELED"
-		errorMessage = "task canceled"
+		t.run.ErrorCode = "CANCELED"
+		t.run.ErrorMessage = "task canceled"
 	}
-
-	jobRun := &model.JobRun{
-		JobID:        jobID,
-		WorkerID:     h.workerID,
-		Attempt:      1,
-		Result:       resultJSON,
-		ErrorCode:    errorCode,
-		ErrorMessage: errorMessage,
-		StartedAt:    startedAt,
-		EndedAt:      &endedAt,
-	}
-	if err := h.jobRunRepo.Create(ctx, jobRun); err != nil {
-		h.logger.Warn("failed to persist batch job run", zap.Uint64("job_id", jobID), zap.Error(err))
+	endedAt := time.Now().UTC()
+	t.run.EndedAt = &endedAt
+	if err := t.handler.jobRunRepo.Update(ctx, t.run); err != nil {
+		t.handler.logger.Warn("failed to finalize tracked batch job run", zap.Uint64("run_id", t.run.ID), zap.Error(err))
 	}
 }
 

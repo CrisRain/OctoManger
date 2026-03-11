@@ -20,6 +20,7 @@ import (
 	"octomanger/backend/config"
 	"octomanger/backend/internal/repository"
 	"octomanger/backend/internal/router"
+	"octomanger/backend/internal/server"
 	"octomanger/backend/internal/service"
 	"octomanger/backend/internal/task"
 	"octomanger/backend/internal/tlsmgr"
@@ -89,10 +90,17 @@ func main() {
 	}()
 
 	dispatcher := task.NewProducer(asynqClient)
+	remoteServiceURL := strings.TrimSpace(cfg.OctoModuleService.URL)
+	if remoteServiceURL == "" {
+		log.Fatal("octomodule_service.url is required; stdin/stdout bridge is disabled")
+	}
 	pythonBridge := bridge.PythonBridge{
-		Binary:  cfg.Python.Bin,
-		Script:  cfg.Python.Script,
-		Timeout: cfg.Python.Timeout(),
+		Binary:       cfg.Python.Bin,
+		Script:       cfg.Python.Script,
+		Timeout:      cfg.Python.Timeout(),
+		ServiceURL:   remoteServiceURL,
+		ServiceToken: strings.TrimSpace(cfg.OctoModuleService.Token),
+		ForceRemote:  true,
 	}
 
 	accountTypeRepo := repository.NewAccountTypeRepository(db)
@@ -107,10 +115,29 @@ func main() {
 
 	accountTypeSvc := service.NewAccountTypeService(accountTypeRepo, cfg.Paths.OctoModuleDir)
 	accountSvc := service.NewAccountService(accountRepo, accountTypeRepo, dispatcher, jobRepo)
-	emailSvc := service.NewEmailAccountService(emailAccountRepo, service.NewGoEmailBatchRegistrar(), dispatcher, redisClient, jobRepo)
-	octoSvc := service.NewOctoModuleService(accountTypeRepo, jobRunRepo, pythonBridge, cfg.Paths.OctoModuleDir, cfg.Python.Bin)
-	jobSvc := service.NewJobService(jobRepo, jobRunRepo, accountTypeRepo, dispatcher)
+	emailSvc := service.NewEmailAccountService(
+		emailAccountRepo,
+		service.NewOutlookEmailBatchRegistrar(pythonBridge, strings.TrimSpace(cfg.Paths.OctoModuleDir)),
+		dispatcher,
+		redisClient,
+		jobRepo,
+	)
 	apiKeySvc := service.NewApiKeyService(apiKeyRepo)
+	internalToken, tokenErr := service.EnsureInternalKey(context.Background(), apiKeyRepo, systemConfigRepo)
+	if tokenErr != nil {
+		log.Warn("could not ensure internal api key", zap.Error(tokenErr))
+	}
+	octoSvc := service.NewOctoModuleService(
+		accountTypeRepo,
+		jobRunRepo,
+		pythonBridge,
+		cfg.Paths.OctoModuleDir,
+		cfg.Python.Bin,
+		internalAPIURL(cfg),
+		internalToken,
+	)
+	octoInternalSvc := service.NewOctoModuleInternalService(accountRepo, emailSvc)
+	jobSvc := service.NewJobService(jobRepo, jobRunRepo, accountTypeRepo, dispatcher)
 	jobExecutor := service.NewJobExecutor(service.JobExecutorOptions{
 		Logger:             log,
 		JobRepo:            jobRepo,
@@ -120,6 +147,8 @@ func main() {
 		AccountSessionRepo: accountSessionRepo,
 		PythonBridge:       pythonBridge,
 		ModuleDir:          strings.TrimSpace(cfg.Paths.OctoModuleDir),
+		InternalAPIURL:     internalAPIURL(cfg),
+		InternalAPIToken:   internalToken,
 	})
 	triggerSvc := service.NewTriggerService(triggerRepo, accountTypeRepo, jobRepo, dispatcher, jobExecutor)
 	systemConfigSvc := service.NewSystemConfigService(systemConfigRepo)
@@ -130,6 +159,7 @@ func main() {
 		Account:      accountSvc,
 		EmailAccount: emailSvc,
 		OctoModule:   octoSvc,
+		OctoInternal: octoInternalSvc,
 		Job:          jobSvc,
 		ApiKey:       apiKeySvc,
 		Trigger:      triggerSvc,
@@ -153,6 +183,11 @@ func main() {
 		ErrorLog:     logger.NewStdLogger(log, zapcore.WarnLevel, "tls: unknown certificate", "tls: no supported versions"),
 	}
 
+	var (
+		ln              net.Listener
+		httpRedirectSrv *http.Server
+	)
+
 	if cfg.Server.TLS {
 		mgr := tlsmgr.New(systemConfigSvc)
 		if err := mgr.EnsureCert(context.Background()); err != nil {
@@ -160,17 +195,40 @@ func main() {
 		}
 		srv.TLSConfig = mgr.TLSConfig()
 
-		// Start plain-HTTP redirect listener if configured.
-		if httpPort := strings.TrimSpace(cfg.Server.HTTPPort); httpPort != "" {
-			httpAddr := normalizeAddr(httpPort)
-			httpsPort := portOnly(addr)
-			go startHTTPRedirect(httpAddr, httpsPort, log)
+		var listenErr error
+		ln, listenErr = net.Listen("tcp", addr)
+		if listenErr != nil {
+			log.Fatal("failed to listen", zap.Error(listenErr))
 		}
+
+		tlsL, httpL := server.DemuxListener(ln)
+		httpsPort := portOnly(addr)
 
 		go func() {
 			log.Info("api server started (TLS)", zap.String("addr", addr))
-			if err := srv.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			if err := srv.ServeTLS(tlsL, "", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				log.Fatal("api server failed", zap.Error(err))
+			}
+		}()
+
+		httpRedirectSrv = &http.Server{
+			ReadTimeout: 10 * time.Second,
+			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				host := r.Host
+				if h, _, err := net.SplitHostPort(host); err == nil {
+					host = h
+				}
+				target := "https://" + host
+				if httpsPort != "443" {
+					target += ":" + httpsPort
+				}
+				target += r.RequestURI
+				http.Redirect(w, r, target, http.StatusMovedPermanently)
+			}),
+		}
+		go func() {
+			if err := httpRedirectSrv.Serve(httpL); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Warn("http redirect listener stopped", zap.Error(err))
 			}
 		}()
 	} else {
@@ -192,30 +250,15 @@ func main() {
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Error("api server shutdown failed", zap.Error(err))
 	}
-	log.Info("api server stopped")
-}
-
-// startHTTPRedirect runs a plain-HTTP server that permanently redirects every
-// request to the HTTPS equivalent.
-func startHTTPRedirect(httpAddr, httpsPort string, log *zap.Logger) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		host := r.Host
-		if h, _, err := net.SplitHostPort(host); err == nil {
-			host = h
+	if httpRedirectSrv != nil {
+		if err := httpRedirectSrv.Shutdown(ctx); err != nil {
+			log.Error("http redirect server shutdown failed", zap.Error(err))
 		}
-		target := "https://" + host
-		if httpsPort != "443" {
-			target += ":" + httpsPort
-		}
-		target += r.RequestURI
-		http.Redirect(w, r, target, http.StatusMovedPermanently)
-	})
-	srv := &http.Server{Addr: httpAddr, Handler: mux, ReadTimeout: 10 * time.Second}
-	log.Info("http redirect server started", zap.String("addr", httpAddr))
-	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Warn("http redirect server stopped", zap.Error(err))
 	}
+	if ln != nil {
+		_ = ln.Close()
+	}
+	log.Info("api server stopped")
 }
 
 func normalizeAddr(port string) string {
@@ -232,4 +275,13 @@ func normalizeAddr(port string) string {
 // portOnly returns just the numeric port from a normalizeAddr result (e.g. ":443" → "443").
 func portOnly(addr string) string {
 	return strings.TrimPrefix(addr, ":")
+}
+
+// internalAPIURL returns the base URL that OctoModule scripts use to call back into OctoManger.
+func internalAPIURL(cfg config.Config) string {
+	port := strings.TrimPrefix(normalizeAddr(cfg.Server.Port), ":")
+	if cfg.Server.TLS {
+		return "https://127.0.0.1:" + port
+	}
+	return "http://127.0.0.1:" + port
 }

@@ -48,6 +48,24 @@ describe("api", () => {
     );
   });
 
+  it("builds job run query strings", async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        code: 0,
+        message: "success",
+        data: { items: [], total: 0, limit: 20, offset: 0 },
+      }),
+    } as Response);
+
+    await api.listJobRuns({ limit: 20, offset: 0, job_id: 42, type_key: "generic_demo", outcome: "failed" });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/v1/jobs/runs?limit=20&offset=0&job_id=42&type_key=generic_demo&outcome=failed",
+      expect.any(Object),
+    );
+  });
+
   it("adds authorization header for trigger firing", async () => {
     vi.mocked(fetch).mockResolvedValue({
       ok: true,

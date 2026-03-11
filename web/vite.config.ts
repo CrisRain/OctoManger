@@ -16,6 +16,40 @@ export default defineConfig({
       "/healthz": "http://localhost:8080"
     }
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          const normalizedId = id.replace(/\\/g, "/");
+
+          if (!normalizedId.includes("/node_modules/")) {
+            return undefined;
+          }
+
+          if (
+            /\/node_modules\/(react|react-dom|react-router|react-router-dom|scheduler)(\/|$)/.test(
+              normalizedId,
+            )
+          ) {
+            return "react-vendor";
+          }
+          if (
+            normalizedId.includes("/node_modules/@tanstack/react-query/") ||
+            normalizedId.includes("/node_modules/sonner/")
+          ) {
+            return "data-vendor";
+          }
+          if (
+            normalizedId.includes("/node_modules/@radix-ui/") ||
+            normalizedId.includes("/node_modules/lucide-react/")
+          ) {
+            return "ui-vendor";
+          }
+          return "vendor";
+        }
+      }
+    }
+  },
   test: {
     environment: "jsdom",
     setupFiles: "./src/test/setup.ts",

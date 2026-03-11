@@ -6,7 +6,7 @@ export SERVER_WEB_DIST_DIR="${SERVER_WEB_DIST_DIR:-${WEB_DIST_DIR:-/app/web-dist
 export REDIS_ADDR="${REDIS_ADDR:-redis:6379}"
 export ASYNQ_CONCURRENCY="${ASYNQ_CONCURRENCY:-${WORKER_CONCURRENCY:-10}}"
 export PYTHON_BIN="${PYTHON_BIN:-python3}"
-export PYTHON_SCRIPT="${PYTHON_SCRIPT:-/app/scripts/python/account_manager.py}"
+export PYTHON_SCRIPT="${PYTHON_SCRIPT:-}"
 export PYTHON_TIMEOUT_SECONDS="${PYTHON_TIMEOUT_SECONDS:-${PYTHON_TIMEOUT_SEC:-60}}"
 export PATHS_OCTO_MODULE_DIR="${PATHS_OCTO_MODULE_DIR:-${OCTO_MODULE_DIR:-/app/scripts/python/modules}}"
 export LOGGING_FILE="${LOGGING_FILE:-${LOG_FILE:-/app/logs/octomanger.log}}"
@@ -18,11 +18,35 @@ export DATABASE_RESET="${DATABASE_RESET:-false}"
 
 REDIS_HOST="${REDIS_ADDR%:*}"
 REDIS_PORT="${REDIS_ADDR##*:}"
+BUILTIN_MODULES_DIR="/app/scripts/python-modules-seed"
 
 db_conn="${DATABASE_DSN}"
 if [[ -z "${db_conn}" ]]; then
   db_conn="${DATABASE_URL}"
 fi
+
+seed_octo_modules() {
+  local target_dir="$1"
+  local seed_dir="$2"
+
+  if [[ ! -d "${seed_dir}" ]]; then
+    echo "Built-in Octo modules directory is missing: ${seed_dir}"
+    return 0
+  fi
+
+  mkdir -p "${target_dir}"
+
+  while IFS= read -r source_path; do
+    local name
+    name="$(basename "${source_path}")"
+    local target_path="${target_dir}/${name}"
+    if [[ -e "${target_path}" ]]; then
+      continue
+    fi
+    cp -a "${source_path}" "${target_path}"
+    echo "Seeded built-in Octo module asset: ${name}"
+  done < <(find "${seed_dir}" -mindepth 1 -maxdepth 1 | sort)
+}
 
 wait_for_tcp() {
   local host="$1"
@@ -71,6 +95,8 @@ if [[ -n "${db_conn}" ]]; then
 else
   echo "DATABASE_DSN/DATABASE_URL is empty; PostgreSQL checks are skipped."
 fi
+
+seed_octo_modules "${PATHS_OCTO_MODULE_DIR}" "${BUILTIN_MODULES_DIR}"
 
 # SERVICES controls which components to run (default: all).
 # Example: SERVICES=api,worker  — omit scheduler and daemon

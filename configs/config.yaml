@@ -24,8 +24,14 @@ asynq:
 
 python:
   bin: "python"
-  script: "../scripts/python/account_manager.py"
-  timeout_seconds: 60
+  script: ""
+  timeout_seconds: 0
+
+octomodule_service:
+  url: "http://127.0.0.1:8091"
+  listen: ":8091"
+  token: ""
+  embedded: true
 
 logging:
   file: "logs/octomanger.log"

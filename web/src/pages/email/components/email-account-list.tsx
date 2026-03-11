@@ -56,8 +56,8 @@ export function EmailAccountList({
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <div className="space-y-1">
-          <CardTitle>邮箱账号列表</CardTitle>
-          <CardDescription>共 {total} 条</CardDescription>
+          <CardTitle>已接入的邮箱</CardTitle>
+          <CardDescription>{total > 0 ? `当前共 ${total} 个邮箱` : "接入后的邮箱会出现在这里"}</CardDescription>
         </div>
         <Button variant="outline" size="icon" onClick={onRefresh} disabled={loading}>
           <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
@@ -65,15 +65,15 @@ export function EmailAccountList({
       </CardHeader>
 
       <div className="mx-6 mb-3 flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-4 py-2 text-sm">
-        <span className="text-muted-foreground">{someSelected ? `已选 ${selectedIds.size} 项` : "批量操作"}</span>
+        <span className="text-muted-foreground">{someSelected ? `已选中 ${selectedIds.size} 个邮箱` : "批量操作区"}</span>
         <div className="ml-auto flex items-center gap-2">
           <Button size="sm" variant="outline" disabled={batchLoading || !someSelected} onClick={onBatchVerify}>
             <CheckCheck className="mr-1 h-3.5 w-3.5" />
-            批量验证
+            标记为可用
           </Button>
           <Button size="sm" variant="destructive" disabled={batchLoading || !someSelected} onClick={onBatchDelete}>
             <Trash2 className="mr-1 h-3.5 w-3.5" />
-            批量删除
+            删除所选
           </Button>
         </div>
       </div>
@@ -83,7 +83,7 @@ export function EmailAccountList({
           <div className="text-sm text-muted-foreground">加载中...</div>
         ) : items.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border/80 bg-muted/25 px-4 py-8 text-center text-sm text-muted-foreground">
-            暂无邮箱账号
+            还没有接入任何邮箱。建议先到“添加一个”里完成第一个账号接入。
           </div>
         ) : (
           <Table>
@@ -99,8 +99,8 @@ export function EmailAccountList({
                 <TableHead>ID</TableHead>
                 <TableHead>邮箱地址</TableHead>
                 <TableHead>服务商</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead>更新时间</TableHead>
+                <TableHead>可用状态</TableHead>
+                <TableHead>最近更新</TableHead>
                 <TableHead className="text-right">操作</TableHead>
               </TableRow>
             </TableHeader>
@@ -142,7 +142,7 @@ export function EmailAccountList({
                       variant="ghost"
                       disabled={item.status === 1}
                       onClick={() => onVerify(item.id)}
-                      title="验证"
+                      title="标记为可用"
                     >
                       <CheckCheck className="h-4 w-4" />
                     </Button>

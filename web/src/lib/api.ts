@@ -15,6 +15,8 @@ import type {
   FireTriggerResult,
   HealthStatus,
   Job,
+  JobRun,
+  JobSummary,
   JsonObject,
   LatestEmailMessageResult,
   ListEmailMailboxesResult,
@@ -27,6 +29,7 @@ import type {
   OctoModuleSyncResult,
   VenvInfo,
   InstallDepsResult,
+  InstallModuleDepsPayload,
   OutlookAuthorizeURLResult,
   OutlookTokenResponse,
   PagedResult,
@@ -268,7 +271,7 @@ export const api = {
     }),
   getModuleVenv: (typeKey: string) =>
     request<VenvInfo>(`/api/v1/octo-modules/${encodeURIComponent(typeKey)}/venv`),
-  installModuleDeps: (typeKey: string, payload: { packages?: string[]; from_requirements?: boolean; requirements_content?: string }) =>
+  installModuleDeps: (typeKey: string, payload: InstallModuleDepsPayload) =>
     request<InstallDepsResult>(`/api/v1/octo-modules/${encodeURIComponent(typeKey)}/venv/install`, {
       method: "POST",
       body: JSON.stringify(payload),
@@ -347,9 +350,25 @@ export const api = {
     request<{ deleted: boolean }>("/api/v1/ssl/certificate", { method: "DELETE" }),
 
   // --- Jobs ---
+  getJobSummary: () => request<JobSummary>("/api/v1/jobs/summary"),
   listJobs: (params?: { limit?: number; offset?: number }) => {
     const search = params ? new URLSearchParams(params as Record<string, string>).toString() : "";
     return request<PagedResult<Job>>(`/api/v1/jobs/${search ? "?" + search : ""}`);
+  },
+  listJobRuns: (params?: {
+    limit?: number;
+    offset?: number;
+    job_id?: number;
+    type_key?: string;
+    action_key?: string;
+    worker_id?: string;
+    outcome?: "success" | "failed";
+  }) => {
+    const filtered = Object.fromEntries(
+      Object.entries(params ?? {}).filter(([, value]) => value !== undefined && value !== "")
+    ) as Record<string, string>;
+    const search = new URLSearchParams(filtered).toString();
+    return request<PagedResult<JobRun>>(`/api/v1/jobs/runs${search ? "?" + search : ""}`);
   },
   getJob: (id: number) => request<Job>(`/api/v1/jobs/${id}`),
   createJob: (payload: unknown) =>
@@ -364,6 +383,11 @@ export const api = {
     }),
   cancelJob: (id: number) =>
     request<Job>(`/api/v1/jobs/${id}:cancel`, {
+      method: "POST",
+      body: JSON.stringify({})
+    }),
+  retryJob: (id: number) =>
+    request<Job>(`/api/v1/jobs/${id}:retry`, {
       method: "POST",
       body: JSON.stringify({})
     }),

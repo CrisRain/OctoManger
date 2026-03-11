@@ -37,6 +37,7 @@ type JobExecutionResult struct {
 	Identifier   string
 	Status       string
 	Result       map[string]any
+	Logs         []string
 	ErrorCode    string
 	ErrorMessage string
 	Session      *adapter.Session
@@ -64,6 +65,8 @@ type JobExecutorOptions struct {
 	PythonBridge       bridge.PythonBridge
 	ModuleDir          string
 	WorkerID           string
+	InternalAPIURL     string
+	InternalAPIToken   string
 }
 
 type jobExecutor struct {
@@ -76,6 +79,8 @@ type jobExecutor struct {
 	pythonBridge       bridge.PythonBridge
 	moduleDir          string
 	workerID           string
+	internalAPIURL     string
+	internalAPIToken   string
 
 	mu              sync.Mutex
 	genericAdapters map[string]adapter.Adapter
@@ -106,6 +111,8 @@ func NewJobExecutor(opts JobExecutorOptions) JobExecutor {
 		pythonBridge:       opts.PythonBridge,
 		moduleDir:          strings.TrimSpace(opts.ModuleDir),
 		workerID:           workerID,
+		internalAPIURL:     strings.TrimSpace(opts.InternalAPIURL),
+		internalAPIToken:   strings.TrimSpace(opts.InternalAPIToken),
 		genericAdapters:    make(map[string]adapter.Adapter),
 	}
 }
@@ -127,6 +134,14 @@ func (e *jobExecutor) ExecuteJob(ctx context.Context, jobID uint64) (*JobExecuti
 	}
 
 	if job.Status == JobStatusCanceled || job.Status == JobStatusDone || job.Status == JobStatusFailed {
+		return summary, nil
+	}
+
+	if isOctoModuleDaemonOnly() {
+		summary.Status = JobStatusFailed
+		summary.ErrorCode = "DAEMON_ONLY"
+		summary.ErrorMessage = "octomodule runs in daemon mode only"
+		_, _ = e.jobRepo.UpdateStatus(ctx, job.ID, JobStatusFailed)
 		return summary, nil
 	}
 
@@ -229,12 +244,43 @@ func (e *jobExecutor) executeAction(
 
 	selectedAdapter := e.pickAdapter(job.TypeKey)
 	spec := decodeSpecMap(account.Spec)
+	runTracker := e.startJobRun(ctx, job.ID, account.ID, startedAt)
+	item.RunID = runTracker.RunID()
+	logSink := func(source, level, message string) {
+		trimmedMessage := strings.TrimSpace(message)
+		if trimmedMessage == "" {
+			return
+		}
+
+		fields := []zap.Field{
+			zap.Uint64("job_id", job.ID),
+			zap.Uint64("account_id", account.ID),
+			zap.String("type_key", job.TypeKey),
+			zap.String("action", job.ActionKey),
+			zap.String("source", strings.TrimSpace(source)),
+			zap.String("level", strings.TrimSpace(level)),
+		}
+		switch strings.ToLower(strings.TrimSpace(level)) {
+		case "error":
+			e.logger.Error("module runtime log", append(fields, zap.String("message", trimmedMessage))...)
+		case "warn", "warning":
+			e.logger.Warn("module runtime log", append(fields, zap.String("message", trimmedMessage))...)
+		case "debug":
+			e.logger.Debug("module runtime log", append(fields, zap.String("message", trimmedMessage))...)
+		default:
+			e.logger.Info("module runtime log", append(fields, zap.String("message", trimmedMessage))...)
+		}
+
+		runTracker.AppendLog(ctx, source, level, trimmedMessage)
+	}
+
 	if err := selectedAdapter.ValidateSpec(spec); err != nil {
 		execErr := fmt.Errorf("VALIDATION_FAILED: %w", err)
 		errorCode, errorMessage := parseExecutionError(execErr)
 		item.ErrorCode = errorCode
 		item.ErrorMessage = errorMessage
-		item.RunID, item.EndedAt = e.persistJobRun(ctx, job.ID, account.ID, startedAt, nil, execErr)
+		item.Logs, item.EndedAt = runTracker.Finalize(ctx, nil, execErr, nil)
+		item.RunID = runTracker.RunID()
 		return item
 	}
 
@@ -249,19 +295,24 @@ func (e *jobExecutor) executeAction(
 			Identifier: account.Identifier,
 			Spec:       spec,
 		},
+		APIURL:   e.internalAPIURL,
+		APIToken: e.internalAPIToken,
+		LogSink:  logSink,
 	})
 	if err != nil {
 		errorCode, errorMessage := parseExecutionError(err)
 		item.ErrorCode = errorCode
 		item.ErrorMessage = errorMessage
-		item.RunID, item.EndedAt = e.persistJobRun(ctx, job.ID, account.ID, startedAt, nil, err)
+		item.Logs, item.EndedAt = runTracker.Finalize(ctx, nil, err, result.Logs)
+		item.RunID = runTracker.RunID()
 		return item
 	}
 
 	item.Status = result.Status
 	item.Result = result.Result
 	item.Session = result.Session
-	item.RunID, item.EndedAt = e.persistJobRun(ctx, job.ID, account.ID, startedAt, &result, nil)
+	item.Logs, item.EndedAt = runTracker.Finalize(ctx, &result, nil, result.Logs)
+	item.RunID = runTracker.RunID()
 	if result.Session != nil {
 		e.persistAccountSession(ctx, account.ID, result.Session)
 	}
@@ -286,49 +337,188 @@ func (e *jobExecutor) pickAdapter(typeKey string) adapter.Adapter {
 	return selected
 }
 
-func (e *jobExecutor) persistJobRun(
+type liveJobRunTracker struct {
+	executor *jobExecutor
+	mu       sync.Mutex
+	run      *model.JobRun
+	logs     []string
+}
+
+func (e *jobExecutor) startJobRun(
 	ctx context.Context,
 	jobID uint64,
 	accountID uint64,
 	startedAt time.Time,
-	result *adapter.Result,
-	execErr error,
-) (uint64, *time.Time) {
-	endedAt := time.Now().UTC()
+) *liveJobRunTracker {
+	accountIDValue := accountID
+	tracker := &liveJobRunTracker{
+		executor: e,
+		run: &model.JobRun{
+			JobID:     jobID,
+			AccountID: &accountIDValue,
+			WorkerID:  e.workerID,
+			Attempt:   1,
+			StartedAt: startedAt,
+		},
+	}
 
-	var resultJSON []byte
+	if e.jobRunRepo == nil {
+		return tracker
+	}
+
+	if err := e.jobRunRepo.Create(ctx, tracker.run); err != nil {
+		e.logger.Error("failed to create live job run", zap.Uint64("job_id", jobID), zap.Uint64("account_id", accountID), zap.Error(err))
+	}
+	return tracker
+}
+
+func (t *liveJobRunTracker) RunID() uint64 {
+	if t == nil || t.run == nil {
+		return 0
+	}
+	return t.run.ID
+}
+
+func (t *liveJobRunTracker) AppendLog(ctx context.Context, source, level, message string) {
+	if t == nil {
+		return
+	}
+
+	formatted := formatRuntimeLogLine(source, level, message)
+	if formatted == "" {
+		return
+	}
+
+	t.mu.Lock()
+	t.logs = append(t.logs, formatted)
+	t.syncLogsLocked()
+	snapshot := t.snapshotLocked()
+	t.mu.Unlock()
+
+	t.persistSnapshot(ctx, snapshot)
+}
+
+func (t *liveJobRunTracker) Finalize(ctx context.Context, result *adapter.Result, execErr error, fallbackLogs []string) ([]string, *time.Time) {
+	if t == nil {
+		endedAt := time.Now().UTC()
+		return append([]string(nil), fallbackLogs...), &endedAt
+	}
+
+	t.mu.Lock()
+	if len(fallbackLogs) > len(t.logs) {
+		t.logs = append([]string(nil), fallbackLogs...)
+	}
+	t.syncLogsLocked()
+
 	if result != nil {
 		raw, err := json.Marshal(result)
 		if err != nil {
-			e.logger.Warn("failed to marshal job run result", zap.Uint64("job_id", jobID), zap.Error(err))
+			t.executor.logger.Warn("failed to marshal job run result", zap.Uint64("job_id", t.run.JobID), zap.Error(err))
 		} else {
-			resultJSON = raw
+			t.run.Result = raw
 		}
 	}
 
-	errorCode := ""
-	errorMessage := ""
+	t.run.ErrorCode = ""
+	t.run.ErrorMessage = ""
 	if execErr != nil {
-		errorCode, errorMessage = parseExecutionError(execErr)
+		t.run.ErrorCode, t.run.ErrorMessage = parseExecutionError(execErr)
 	}
 
-	accountIDValue := accountID
-	jobRun := &model.JobRun{
-		JobID:        jobID,
-		AccountID:    &accountIDValue,
-		WorkerID:     e.workerID,
-		Attempt:      1,
-		Result:       resultJSON,
-		ErrorCode:    errorCode,
-		ErrorMessage: errorMessage,
-		StartedAt:    startedAt,
-		EndedAt:      &endedAt,
+	endedAt := time.Now().UTC()
+	t.run.EndedAt = &endedAt
+	logsCopy := append([]string(nil), t.logs...)
+	snapshot := t.snapshotLocked()
+	t.mu.Unlock()
+
+	t.persistSnapshot(ctx, snapshot)
+	return logsCopy, &endedAt
+}
+
+func (t *liveJobRunTracker) syncLogsLocked() {
+	if t == nil || t.run == nil {
+		return
+	}
+	if len(t.logs) == 0 {
+		t.run.Logs = nil
+		return
+	}
+	rawLogs, err := json.Marshal(t.logs)
+	if err != nil {
+		t.executor.logger.Warn("failed to marshal live job run logs", zap.Uint64("job_id", t.run.JobID), zap.Error(err))
+		return
+	}
+	t.run.Logs = rawLogs
+}
+
+func (t *liveJobRunTracker) snapshotLocked() *model.JobRun {
+	if t == nil || t.run == nil {
+		return nil
 	}
 
-	if err := e.jobRunRepo.Create(ctx, jobRun); err != nil {
-		e.logger.Error("failed to persist job run", zap.Uint64("job_id", jobID), zap.Uint64("account_id", accountID), zap.Error(err))
+	copied := *t.run
+	if copied.AccountID != nil {
+		accountID := *copied.AccountID
+		copied.AccountID = &accountID
 	}
-	return jobRun.ID, jobRun.EndedAt
+	if copied.EndedAt != nil {
+		endedAt := *copied.EndedAt
+		copied.EndedAt = &endedAt
+	}
+	if len(copied.Result) > 0 {
+		copied.Result = append([]byte(nil), copied.Result...)
+	}
+	if len(copied.Logs) > 0 {
+		copied.Logs = append([]byte(nil), copied.Logs...)
+	}
+	return &copied
+}
+
+func (t *liveJobRunTracker) persistSnapshot(ctx context.Context, snapshot *model.JobRun) {
+	if t == nil || t.executor == nil || t.executor.jobRunRepo == nil || snapshot == nil {
+		return
+	}
+
+	if snapshot.ID == 0 {
+		if snapshot.EndedAt == nil {
+			return
+		}
+		if err := t.executor.jobRunRepo.Create(ctx, snapshot); err != nil {
+			t.executor.logger.Error("failed to persist finalized job run snapshot", zap.Uint64("job_id", snapshot.JobID), zap.Error(err))
+			return
+		}
+		t.mu.Lock()
+		if t.run != nil && t.run.ID == 0 {
+			t.run.ID = snapshot.ID
+		}
+		t.mu.Unlock()
+		return
+	}
+
+	if err := t.executor.jobRunRepo.Update(ctx, snapshot); err != nil {
+		t.executor.logger.Error("failed to update live job run", zap.Uint64("job_id", snapshot.JobID), zap.Uint64("run_id", snapshot.ID), zap.Error(err))
+	}
+}
+
+func formatRuntimeLogLine(source, level, message string) string {
+	trimmedMessage := strings.TrimSpace(message)
+	if trimmedMessage == "" {
+		return ""
+	}
+	return fmt.Sprintf("[%s][%s] %s", strings.TrimSpace(source), normalizeRuntimeLogLevel(level), trimmedMessage)
+}
+
+func normalizeRuntimeLogLevel(level string) string {
+	normalized := strings.ToLower(strings.TrimSpace(level))
+	switch normalized {
+	case "debug", "info", "warn", "warning", "error":
+		if normalized == "warning" {
+			return "warn"
+		}
+		return normalized
+	default:
+		return "info"
+	}
 }
 
 func (e *jobExecutor) persistAccountSession(ctx context.Context, accountID uint64, session *adapter.Session) {

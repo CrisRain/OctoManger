@@ -44,6 +44,8 @@ type octoModuleService struct {
 	runner          OctoModuleRunner
 	moduleDir       string
 	pythonBin       string
+	internalAPIURL  string
+	internalToken   string
 }
 
 func NewOctoModuleService(
@@ -52,6 +54,8 @@ func NewOctoModuleService(
 	runner OctoModuleRunner,
 	moduleDir string,
 	pythonBin string,
+	internalAPIURL string,
+	internalToken string,
 ) OctoModuleService {
 	return &octoModuleService{
 		accountTypeRepo: accountTypeRepo,
@@ -59,6 +63,8 @@ func NewOctoModuleService(
 		runner:          runner,
 		moduleDir:       moduleDir,
 		pythonBin:       pythonBin,
+		internalAPIURL:  trim(internalAPIURL),
+		internalToken:   trim(internalToken),
 	}
 }
 
@@ -67,7 +73,10 @@ func (s *octoModuleService) List(ctx context.Context) ([]dto.OctoModuleInfoRespo
 	if err != nil {
 		return nil, internalError("failed to list account types", err)
 	}
-	responses := make([]dto.OctoModuleInfoResponse, 0, len(items))
+	responses := make([]dto.OctoModuleInfoResponse, 0, len(items)+len(builtinOctoModules(s.moduleDir)))
+	for _, builtin := range builtinOctoModules(s.moduleDir) {
+		responses = append(responses, s.buildBuiltinInfo(builtin))
+	}
 	for i := range items {
 		if !isGenericCategory(items[i].Category) {
 			continue
@@ -78,12 +87,11 @@ func (s *octoModuleService) List(ctx context.Context) ([]dto.OctoModuleInfoRespo
 }
 
 func (s *octoModuleService) Get(ctx context.Context, typeKey string) (*dto.OctoModuleInfoResponse, error) {
-	item, err := s.getGenericAccountType(ctx, typeKey)
+	info, _, _, err := s.resolveModuleInfo(ctx, typeKey)
 	if err != nil {
 		return nil, err
 	}
-	response := s.buildInfo(item)
-	return &response, nil
+	return info, nil
 }
 
 func (s *octoModuleService) DryRun(
@@ -91,6 +99,9 @@ func (s *octoModuleService) DryRun(
 	typeKey string,
 	req *dto.OctoModuleDryRunRequest,
 ) (*dto.OctoModuleDryRunResponse, error) {
+	if isOctoModuleDaemonOnly() {
+		return nil, octoModuleDaemonOnlyError("dry-run")
+	}
 	if req == nil {
 		return nil, invalidInput("payload is required")
 	}
@@ -141,6 +152,9 @@ func (s *octoModuleService) DryRun(
 		Params: params,
 		Context: bridge.InputContext{
 			RequestID: requestID,
+			Protocol:  "ndjson.v1",
+			APIURL:    s.internalAPIURL,
+			APIToken:  s.internalToken,
 		},
 	})
 	if runErr != nil {
@@ -152,6 +166,7 @@ func (s *octoModuleService) DryRun(
 		Output: dto.OctoModuleOutputResponse{
 			Status:       output.Status,
 			Result:       output.Result,
+			Logs:         append([]string(nil), output.Logs...),
 			ErrorCode:    output.ErrorCode,
 			ErrorMessage: output.ErrorMessage,
 		},
@@ -273,11 +288,17 @@ func (s *octoModuleService) GetRunHistory(
 	typeKey string,
 	limit, offset int,
 ) (*dto.OctoModuleRunHistoryResponse, error) {
-	item, err := s.getGenericAccountType(ctx, typeKey)
+	_, builtin, item, err := s.resolveModuleInfo(ctx, typeKey)
 	if err != nil {
 		return nil, err
 	}
-	items, total, err := s.jobRunRepo.ListByJobTypeKey(ctx, item.Key, limit, offset)
+	var items []model.JobRunWithJob
+	var total int64
+	if builtin != nil {
+		items, total, err = s.jobRunRepo.ListPaged(ctx, builtin.RunFilter, limit, offset)
+	} else {
+		items, total, err = s.jobRunRepo.ListByJobTypeKey(ctx, item.Key, limit, offset)
+	}
 	if err != nil {
 		return nil, internalError("failed to list job runs", err)
 	}
@@ -422,23 +443,6 @@ func (s *octoModuleService) buildInfo(item *model.AccountType) dto.OctoModuleInf
 	}
 }
 
-func jobRunToResponse(item model.JobRunWithJob) dto.JobRunResponse {
-	return dto.JobRunResponse{
-		ID:           item.ID,
-		JobID:        item.JobID,
-		JobTypeKey:   item.JobTypeKey,
-		JobActionKey: item.JobActionKey,
-		AccountID:    item.AccountID,
-		WorkerID:     item.WorkerID,
-		Attempt:      item.Attempt,
-		Result:       item.Result,
-		ErrorCode:    item.ErrorCode,
-		ErrorMessage: item.ErrorMessage,
-		StartedAt:    item.StartedAt,
-		EndedAt:      item.EndedAt,
-	}
-}
-
 func (s *octoModuleService) GetVenvInfo(ctx context.Context, typeKey string) (*dto.VenvInfoResponse, error) {
 	_ = ctx
 	info, err := s.Get(ctx, typeKey)
@@ -534,6 +538,21 @@ func (s *octoModuleService) InstallDeps(ctx context.Context, typeKey string, req
 		}
 	}
 
+	if req.InstallPlaywright {
+		venvPython := octomodule.VenvPythonPath(info.ModuleDir)
+		browser := trim(req.PlaywrightBrowser)
+		if browser == "" {
+			browser = "chromium"
+		}
+		out.WriteString("\n[playwright] installing browser runtime...\n")
+		pwOut, pwErr := runSubprocess(ctx, info.ModuleDir, venvPython, []string{"-m", "playwright", "install", browser}, 10*time.Minute)
+		out.WriteString(pwOut)
+		if pwErr != nil {
+			out.WriteString(playwrightInstallHint(pwOut))
+			return &dto.InstallDepsResponse{Success: false, Output: out.String()}, nil
+		}
+	}
+
 	return &dto.InstallDepsResponse{Success: true, Output: out.String()}, nil
 }
 
@@ -547,6 +566,23 @@ func runSubprocess(ctx context.Context, dir, binary string, args []string, timeo
 	cmd.Stderr = &buf
 	err := cmd.Run()
 	return buf.String(), err
+}
+
+func playwrightInstallHint(output string) string {
+	lowered := strings.ToLower(output)
+	if !strings.Contains(lowered, "failed to fetch") &&
+		!strings.Contains(lowered, "download failed") &&
+		!strings.Contains(lowered, "timed out") &&
+		!strings.Contains(lowered, "econnreset") &&
+		!strings.Contains(lowered, "getaddrinfo") &&
+		!strings.Contains(lowered, "enotfound") {
+		return ""
+	}
+
+	return "\n[hint] Playwright 浏览器下载失败。\n" +
+		"[hint] 请为当前运行环境配置可访问的 PLAYWRIGHT_DOWNLOAD_HOST 镜像，或使用宿主机独立运行 octomodule。\n" +
+		"[hint] 如果当前网络依赖代理，请同时设置 HTTP_PROXY / HTTPS_PROXY / ALL_PROXY。\n" +
+		"[hint] Docker Compose 已支持把这些环境变量透传到 app 容器，并持久化 PLAYWRIGHT_BROWSERS_PATH 浏览器缓存。\n"
 }
 
 var _ OctoModuleService = (*octoModuleService)(nil)

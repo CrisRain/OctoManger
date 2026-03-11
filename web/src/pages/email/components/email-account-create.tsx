@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
-import { Loader2, Settings2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Loader2, Settings2 } from "lucide-react";
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -14,34 +15,24 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { api, extractErrorMessage } from "@/lib/api";
 import { parseJSONObjectText } from "@/lib/format";
 import type { JsonObject } from "@/types";
-import type { OutlookOAuthConfig } from "./outlook-config";
 import {
   OUTLOOK_OAUTH_CALLBACK_MESSAGE,
   type OutlookOAuthCallbackMessage,
 } from "./outlook-oauth-bridge";
+import { isOutlookConfigReady, splitScopes, type OutlookOAuthConfig } from "./outlook-config";
 
 interface EmailAccountCreateProps {
   config: OutlookOAuthConfig;
   onSuccess: () => void;
+  onOpenSetup?: () => void;
 }
 
 const CALLBACK_TIMEOUT_MS = 3 * 60 * 1000;
-
-function splitScopes(raw: string): string[] {
-  const normalized = raw.trim().replace(/,/g, " ");
-  if (!normalized) {
-    return [];
-  }
-  const scopes = normalized
-    .split(/\s+/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-  return Array.from(new Set(scopes));
-}
 
 function toBase64URL(input: Uint8Array): string {
   let binary = "";
@@ -113,18 +104,18 @@ function waitForOAuthCallback(popup: Window, expectedState: string): Promise<str
       }
 
       if ((payload.state ?? "") !== expectedState) {
-        finish(() => reject(new Error("OAuth state 不匹配")));
+        finish(() => reject(new Error("授权校验失败，请重新发起登录。")));
         return;
       }
 
       if (payload.error) {
         const detail = payload.error_description?.trim() || payload.error;
-        finish(() => reject(new Error(`OAuth 失败：${detail}`)));
+        finish(() => reject(new Error(`微软授权没有完成：${detail}`)));
         return;
       }
 
       if (!payload.code?.trim()) {
-        finish(() => reject(new Error("OAuth 回调缺少 code")));
+        finish(() => reject(new Error("授权成功了，但回调里没有拿到 code。")));
         return;
       }
 
@@ -132,14 +123,14 @@ function waitForOAuthCallback(popup: Window, expectedState: string): Promise<str
     };
 
     const timeoutID = window.setTimeout(() => {
-      finish(() => reject(new Error("OAuth 回调超时")));
+      finish(() => reject(new Error("等待微软回调超时，请重新登录一次。")));
     }, CALLBACK_TIMEOUT_MS);
 
     const closeCheckID = window.setInterval(() => {
       if (!popup.closed) {
         return;
       }
-      finish(() => reject(new Error("OAuth 窗口在回调前已关闭")));
+      finish(() => reject(new Error("登录窗口在完成前被关闭了，请重新打开。")));
     }, 500);
 
     window.addEventListener("message", handleMessage);
@@ -162,23 +153,28 @@ function openOAuthPopup(url: string): Window {
 
   const popup = window.open(url, "outlook-oauth", features);
   if (!popup) {
-    throw new Error("弹窗被拦截，请允许弹出窗口后重试。");
+    throw new Error("登录弹窗被浏览器拦截了，请允许弹窗后再试。");
   }
   popup.focus();
   return popup;
 }
 
-export function EmailAccountCreate({ config, onSuccess }: EmailAccountCreateProps) {
+export function EmailAccountCreate({ config, onSuccess, onOpenSetup }: EmailAccountCreateProps) {
   const [loading, setLoading] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [form, setForm] = useState({
     address: "",
     status: "0",
     loginHint: "",
   });
+  const [fieldErrors, setFieldErrors] = useState<{ address?: string }>({});
 
   const [graphConfigDialogOpen, setGraphConfigDialogOpen] = useState(false);
   const [graphConfigText, setGraphConfigText] = useState("{}");
   const [graphConfigDraft, setGraphConfigDraft] = useState("{}");
+
+  const oauthReady = isOutlookConfigReady(config);
+  const scopeCount = splitScopes(config.scope).length;
 
   const graphOverrideCount = useMemo(() => {
     try {
@@ -198,7 +194,7 @@ export function EmailAccountCreate({ config, onSuccess }: EmailAccountCreateProp
       const parsed = parseJSONObjectText(graphConfigDraft, "graph_config");
       setGraphConfigText(JSON.stringify(parsed, null, 2));
       setGraphConfigDialogOpen(false);
-      toast.success("graph_config 覆写已更新");
+      toast.success("高级补充设置已更新。");
     } catch (error) {
       toast.error(extractErrorMessage(error));
     }
@@ -216,20 +212,21 @@ export function EmailAccountCreate({ config, onSuccess }: EmailAccountCreateProp
     const mailbox = config.mailbox.trim() || "INBOX";
     const graphBaseURL = config.graphBaseURL.trim() || "https://graph.microsoft.com/v1.0";
 
+    const nextErrors: { address?: string } = {};
+
     if (!address || !address.includes("@")) {
-      toast.error("请输入有效的邮箱地址。");
+      nextErrors.address = "请输入完整邮箱地址，例如 name@outlook.com。";
+    }
+
+    setFieldErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) {
+      toast.error("先把邮箱地址补正确，再继续。");
       return;
     }
-    if (!clientId) {
-      toast.error("Client ID 为必填项，请在配置标签页中填写。");
-      return;
-    }
-    if (!redirectURI) {
-      toast.error("Redirect URI 为必填项，请在配置标签页中填写。");
-      return;
-    }
-    if (scopes.length === 0) {
-      toast.error("请在配置标签页中配置至少一个 scope。");
+
+    if (!oauthReady || !clientId || !redirectURI || scopes.length === 0) {
+      toast.error("连接设置还没准备好，请先完成“连接设置”里的必填项。");
+      onOpenSetup?.();
       return;
     }
 
@@ -237,11 +234,13 @@ export function EmailAccountCreate({ config, onSuccess }: EmailAccountCreateProp
     try {
       redirectOrigin = new URL(redirectURI).origin;
     } catch {
-      toast.error("Redirect URI 格式无效。");
+      toast.error("连接设置里的回调地址格式不正确，请先去修正。");
+      onOpenSetup?.();
       return;
     }
     if (redirectOrigin !== window.location.origin) {
-      toast.error("Redirect URI 必须与当前页面同源，以支持自动回调处理。");
+      toast.error("回调地址必须和当前页面同域，才能自动完成授权。请先回到连接设置修正。");
+      onOpenSetup?.();
       return;
     }
 
@@ -274,8 +273,6 @@ export function EmailAccountCreate({ config, onSuccess }: EmailAccountCreateProp
       const expectedState = authorize.state?.trim() || state;
       const authCode = await waitForOAuthCallback(popup, expectedState);
 
-      // Send client_secret when configured (confidential client) together with code_verifier (PKCE).
-      // Public clients omit client_secret; confidential clients in Azure AD require both.
       const token = await api.exchangeOutlookCode({
         client_id: clientId,
         tenant,
@@ -288,7 +285,7 @@ export function EmailAccountCreate({ config, onSuccess }: EmailAccountCreateProp
 
       const refreshToken = token.refresh_token?.trim();
       if (!refreshToken) {
-        throw new Error("Token 换取成功，但 refresh_token 为空，请确认已开启 offline_access scope。");
+        throw new Error("已经拿到授权结果，但没有拿到 refresh_token。请确认连接设置里保留了 offline_access 权限。");
       }
 
       const remoteScopes = splitScopes(token.scope ?? "");
@@ -319,12 +316,13 @@ export function EmailAccountCreate({ config, onSuccess }: EmailAccountCreateProp
         },
       });
 
-      toast.success(`Outlook 账号 ${address} 已添加`);
-      setForm((prev) => ({
-        ...prev,
+      toast.success(`邮箱 ${address} 已接入完成。`);
+      setForm({
         address: "",
+        status: "0",
         loginHint: "",
-      }));
+      });
+      setFieldErrors({});
       onSuccess();
     } catch (error) {
       toast.error(extractErrorMessage(error));
@@ -338,31 +336,84 @@ export function EmailAccountCreate({ config, onSuccess }: EmailAccountCreateProp
 
   return (
     <>
-      <Card>
-        <CardHeader>
-          <CardTitle>手动添加 Outlook 账号</CardTitle>
-          <CardDescription>
-            点击「添加账号」后将弹出 Outlook OAuth 授权窗口，回调到
-            {" "}
-            <code className="rounded bg-muted px-1 py-0.5 text-xs font-mono">/oauth/callback</code>
-            {" "}后自动完成账号创建。
-          </CardDescription>
+      <Card className="overflow-hidden border-sky-200/70 bg-gradient-to-br from-white via-white to-sky-50/80 shadow-sm">
+        <CardHeader className="gap-4 border-b border-sky-100/80 bg-white/80 backdrop-blur">
+          <div className="space-y-3">
+            <Badge variant={oauthReady ? "outline" : "secondary"} className="w-fit">
+              {oauthReady ? "已连接，可直接添加" : "还差一步：先完成连接设置"}
+            </Badge>
+            <div className="space-y-2">
+              <CardTitle className="text-xl">添加 1 个 Outlook 邮箱</CardTitle>
+              <CardDescription className="max-w-2xl leading-6">
+                输入邮箱后点击主按钮，系统会弹出微软登录窗口。你完成登录后，这个邮箱就会自动接入，不需要自己处理 OAuth 细节。
+              </CardDescription>
+            </div>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="rounded-2xl border border-border/80 bg-white/85 p-4">
+              <p className="text-sm font-medium">1. 输入邮箱</p>
+              <p className="mt-2 text-sm text-muted-foreground">只填普通邮箱地址即可，例如 `name@outlook.com`。</p>
+            </div>
+            <div className="rounded-2xl border border-border/80 bg-white/85 p-4">
+              <p className="text-sm font-medium">2. 登录微软</p>
+              <p className="mt-2 text-sm text-muted-foreground">系统会自动打开登录弹窗，你只管按微软页面提示操作。</p>
+            </div>
+            <div className="rounded-2xl border border-border/80 bg-white/85 p-4">
+              <p className="text-sm font-medium">3. 自动接入完成</p>
+              <p className="mt-2 text-sm text-muted-foreground">成功后会自动写入账号，无需手动复制 token 或 JSON。</p>
+            </div>
+          </div>
         </CardHeader>
-        <CardContent>
-          <form className="space-y-4" onSubmit={handleSubmit}>
+
+        <CardContent className="space-y-6 pt-6">
+          {!oauthReady ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-medium">当前还不能直接添加邮箱</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    先去填好 Outlook 连接设置。完成后，这里会自动使用你保存的默认参数。
+                  </p>
+                </div>
+                {onOpenSetup ? (
+                  <Button type="button" variant="outline" onClick={onOpenSetup}>
+                    去完成连接设置
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4">
+              <p className="text-sm font-medium">将使用已保存的推荐设置</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                已启用 {scopeCount} 项授权权限，默认邮箱文件夹为 {config.mailbox.trim() || "INBOX"}。
+              </p>
+            </div>
+          )}
+
+          <form className="space-y-6" onSubmit={handleSubmit}>
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="email-address">邮箱地址</Label>
+                <Label htmlFor="email-address">要接入的邮箱地址</Label>
                 <Input
                   id="email-address"
                   value={form.address}
-                  onChange={(e) => setForm((prev) => ({ ...prev, address: e.target.value }))}
-                  placeholder="user@outlook.com"
+                  onChange={(e) => {
+                    setForm((prev) => ({ ...prev, address: e.target.value }));
+                    setFieldErrors((prev) => ({ ...prev, address: undefined }));
+                  }}
+                  placeholder="例如 name@outlook.com"
                   required
+                  aria-invalid={Boolean(fieldErrors.address)}
                 />
+                <p className={`text-xs ${fieldErrors.address ? "text-destructive" : "text-muted-foreground"}`}>
+                  {fieldErrors.address ?? "输入你准备登录授权的那个邮箱地址。"}
+                </p>
               </div>
+
               <div className="space-y-2">
-                <Label htmlFor="email-status">状态</Label>
+                <Label htmlFor="email-status">添加后默认状态</Label>
                 <Select
                   value={form.status}
                   onValueChange={(value) => setForm((prev) => ({ ...prev, status: value }))}
@@ -371,39 +422,78 @@ export function EmailAccountCreate({ config, onSuccess }: EmailAccountCreateProp
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="0">待验证 (0)</SelectItem>
-                    <SelectItem value="1">已验证 (1)</SelectItem>
+                    <SelectItem value="0">先保存，稍后再确认可用性</SelectItem>
+                    <SelectItem value="1">直接标记为可用</SelectItem>
                   </SelectContent>
                 </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="oauth-login-hint">登录提示</Label>
-                <Input
-                  id="oauth-login-hint"
-                  value={form.loginHint}
-                  onChange={(e) => setForm((prev) => ({ ...prev, loginHint: e.target.value }))}
-                  placeholder="可选，如 user@outlook.com"
-                />
+                <p className="text-xs text-muted-foreground">不确定时保留默认选项即可。</p>
               </div>
             </div>
 
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div className="text-xs text-muted-foreground">
-                graph_config 覆写：{graphOverrideCount} 项
+            <div className="overflow-hidden rounded-2xl border border-border/80 bg-white/75">
+              <button
+                type="button"
+                className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left"
+                onClick={() => setShowAdvanced((prev) => !prev)}
+              >
+                <div>
+                  <p className="text-sm font-medium">高级选项 / 更多设置</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    不确定就别展开。这里主要给想预填登录邮箱或覆盖底层参数的高级用户使用。
+                  </p>
+                </div>
+                {showAdvanced ? <ChevronUp className="h-4 w-4 shrink-0" /> : <ChevronDown className="h-4 w-4 shrink-0" />}
+              </button>
+
+              {showAdvanced ? (
+                <>
+                  <Separator />
+                  <div className="space-y-4 p-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="oauth-login-hint">登录页预填邮箱（可选）</Label>
+                      <Input
+                        id="oauth-login-hint"
+                        value={form.loginHint}
+                        onChange={(e) => setForm((prev) => ({ ...prev, loginHint: e.target.value }))}
+                        placeholder="例如 name@outlook.com"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        填写后，微软登录页会优先帮你带上这个邮箱。留空也完全没问题。
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl border border-dashed border-border/80 bg-muted/20 p-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-sm font-medium">高级补充设置</p>
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            只有在你要手动覆盖系统生成的底层参数时才需要填写。默认留空即可。
+                          </p>
+                        </div>
+                        <Button type="button" variant="outline" onClick={openGraphConfigEditor} disabled={loading}>
+                          <Settings2 className="mr-2 h-4 w-4" />
+                          {graphOverrideCount > 0 ? `已设置 ${graphOverrideCount} 项` : "打开 JSON 设置"}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              ) : null}
+            </div>
+
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                <span>默认使用已保存的 Outlook 连接设置。</span>
+                {graphOverrideCount > 0 ? <Badge variant="outline">附加了 {graphOverrideCount} 项高级覆写</Badge> : null}
               </div>
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={openGraphConfigEditor}
-                  disabled={loading}
-                >
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Button type="button" variant="outline" onClick={openGraphConfigEditor} disabled={loading}>
                   <Settings2 className="mr-2 h-4 w-4" />
-                  编辑 graph_config
+                  高级补充设置
                 </Button>
-                <Button type="submit" disabled={loading}>
+                <Button type="submit" disabled={loading || !oauthReady}>
                   {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  添加账号
+                  开始授权并添加
                 </Button>
               </div>
             </div>
@@ -414,26 +504,28 @@ export function EmailAccountCreate({ config, onSuccess }: EmailAccountCreateProp
       <Dialog open={graphConfigDialogOpen} onOpenChange={setGraphConfigDialogOpen}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>编辑 graph_config 覆写</DialogTitle>
+            <DialogTitle>高级补充设置（JSON）</DialogTitle>
             <DialogDescription>
-              OAuth 令牌换取后合并的高级覆写项，使用 JSON 对象格式。
+              只有你要覆盖系统自动生成的底层参数时才需要填写。保持为
+              {" "}
+              <code className="rounded bg-muted px-1 py-0.5 text-xs">{`{}`}</code>
+              {" "}就表示完全使用系统默认值。
             </DialogDescription>
           </DialogHeader>
+
           <Textarea
             className="min-h-[320px] font-mono text-xs"
             value={graphConfigDraft}
             onChange={(e) => setGraphConfigDraft(e.target.value)}
+            placeholder={`{\n  "mailbox": "Archive"\n}`}
           />
+
           <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setGraphConfigDialogOpen(false)}
-            >
+            <Button type="button" variant="outline" onClick={() => setGraphConfigDialogOpen(false)}>
               取消
             </Button>
             <Button type="button" onClick={saveGraphConfigEditor}>
-              保存
+              保存补充设置
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -159,6 +159,16 @@ export interface Job {
   updated_at: string;
 }
 
+export interface JobSummary {
+  total: number;
+  queued: number;
+  running: number;
+  done: number;
+  failed: number;
+  canceled: number;
+  active: number;
+}
+
 export interface OctoModuleInfo {
   type_key: string;
   category: string;
@@ -191,6 +201,7 @@ export interface OctoModuleEnsureResult {
 export interface OctoModuleOutput {
   status: string;
   result?: JsonObject;
+  logs?: string[];
   error_code?: string;
   error_message?: string;
 }
@@ -267,7 +278,9 @@ export interface JobRun {
   account_id?: number;
   worker_id: string;
   attempt: number;
+  status: "running" | "success" | "failed";
   result?: JsonObject;
+  logs?: string[];
   error_code?: string;
   error_message?: string;
   started_at: string;
@@ -396,6 +409,14 @@ export interface VenvInfo {
 export interface InstallDepsResult {
   success: boolean;
   output: string;
+}
+
+export interface InstallModuleDepsPayload {
+  packages?: string[];
+  from_requirements?: boolean;
+  requirements_content?: string;
+  install_playwright?: boolean;
+  playwright_browser?: string;
 }
 
 export interface OutlookTokenResponse {

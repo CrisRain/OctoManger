@@ -33,6 +33,8 @@ type JobHandlerOptions struct {
 	PythonBridge       bridge.PythonBridge
 	ModuleDir          string
 	WorkerID           string
+	InternalAPIURL     string
+	InternalAPIToken   string
 }
 
 type JobHandler struct {
@@ -56,6 +58,8 @@ func NewJobHandler(opts JobHandlerOptions) *JobHandler {
 		PythonBridge:       opts.PythonBridge,
 		ModuleDir:          strings.TrimSpace(opts.ModuleDir),
 		WorkerID:           strings.TrimSpace(opts.WorkerID),
+		InternalAPIURL:     opts.InternalAPIURL,
+		InternalAPIToken:   opts.InternalAPIToken,
 	})
 
 	return &JobHandler{

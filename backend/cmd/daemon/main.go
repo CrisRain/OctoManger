@@ -11,6 +11,8 @@ import (
 
 	"octomanger/backend/config"
 	"octomanger/backend/internal/daemon"
+	"octomanger/backend/internal/repository"
+	"octomanger/backend/internal/service"
 	"octomanger/backend/pkg/database"
 	"octomanger/backend/pkg/logger"
 )
@@ -38,9 +40,18 @@ func main() {
 	}
 	defer func() { _ = sqlDB.Close() }()
 
+	apiKeyRepo := repository.NewApiKeyRepository(db)
+	systemConfigRepo := repository.NewSystemConfigRepository(db)
+	internalToken, tokenErr := service.EnsureInternalKey(context.Background(), apiKeyRepo, systemConfigRepo)
+	if tokenErr != nil {
+		log.Warn("could not ensure internal api key", zap.Error(tokenErr))
+	}
+
 	mgr := daemon.NewManager(db, daemon.Config{
-		PythonBin: cfg.Python.Bin,
-		ModuleDir: strings.TrimSpace(cfg.Paths.OctoModuleDir),
+		PythonBin:        cfg.Python.Bin,
+		ModuleDir:        strings.TrimSpace(cfg.Paths.OctoModuleDir),
+		InternalAPIURL:   internalAPIURL(cfg),
+		InternalAPIToken: internalToken,
 	}, log)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -51,4 +62,16 @@ func main() {
 		log.Fatal("daemon manager failed", zap.Error(err))
 	}
 	log.Info("daemon manager stopped")
+}
+
+func internalAPIURL(cfg config.Config) string {
+	port := strings.TrimSpace(cfg.Server.Port)
+	if port == "" {
+		port = "8080"
+	}
+	port = strings.TrimPrefix(port, ":")
+	if cfg.Server.TLS {
+		return "https://127.0.0.1:" + port
+	}
+	return "http://127.0.0.1:" + port
 }

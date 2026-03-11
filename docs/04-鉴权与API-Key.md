@@ -1,122 +1,184 @@
 # 鉴权与 API Key
 
----
+OctoManger 没有用户名密码体系，后台管理完全依赖 API Key。
 
 ## 基本规则
 
-系统有两种 API Key 角色：
+- 控制台和 API 共用同一套 `X-Api-Key` 认证方式
+- 首个 Admin Key 只能在系统初始化时创建一次
+- Webhook 既支持专属 Bearer Token，也支持 `role=webhook` 的 API Key
+- 模块内部调用使用系统自动维护的 `internal` Key，用户无需手动管理
 
-| 角色 | 用途 | 可访问的路由 |
-| --- | --- | --- |
-| `admin` | 管理操作（控制台使用） | `/api/v1/*` 全部接口 |
-| `webhook` | 外部系统触发 Webhook | `/webhooks/:slug` |
+## 哪些接口不需要 Admin Key
 
-**引导模式**：数据库里还没有任何 Admin Key 时，`/api/v1/*` 接口全部放行，不需要鉴权。这是为了让初始化向导能顺利完成。一旦创建了第一个 Admin Key，引导模式立即关闭。
+公开接口只有这些：
 
----
+- `GET /healthz`
+- `GET /api/v1/system/status`
+- `POST /api/v1/system/setup`
+
+特殊说明：
+
+- `POST /webhooks/{slug}` 不需要 Admin Key，但它本身仍然要求 Trigger Token 或 Webhook API Key
+- `POST /api/v1/system/migrate` 需要 Admin Key
 
 ## 初始化流程
 
-首次访问控制台会自动跳转到 `/setup`。
-
-### 步骤 1 — 运行数据库迁移
-
-系统尚未初始化时（数据表不存在），需要先执行迁移。
-
-点击"运行迁移"，系统调用 `POST /api/v1/system/migrate`，执行 GORM AutoMigrate 并写入默认系统配置（应用名称、任务超时、最大并发数等）。迁移是幂等操作，对已有数据库安全，可以重复执行。
-
-### 步骤 2 — 创建第一个 Admin Key
-
-调用 `POST /api/v1/system/setup`（此接口不需要鉴权），创建第一个角色为 `admin` 的 API Key。
-
-响应包含完整的原始密钥（`raw_key`），**只返回这一次**，之后无法再查看。密钥前 8 位会作为 `key_prefix` 存储，用于在列表中辨认密钥身份。
-
-### 步骤 3 — 保存密钥
-
-请立即复制并妥善保存。控制台会把密钥自动写入浏览器 localStorage，下次访问时无需重新输入。
-
----
-
-## Admin Key 使用方式
-
-### 控制台
-
-控制台自动从 localStorage 读取并在每个请求中附加 `X-Api-Key` 请求头，无需手动操作。
-
-登出：点击"设置 → 退出登录"，会清除 localStorage 中保存的密钥并跳转到登录页。
-
-### curl / 程序调用
+### 1. 查看是否需要初始化
 
 ```bash
-curl -H "X-Api-Key: octo_xxxxxxxxxxxxxxxx" \
-  http://localhost:8080/api/v1/account-types/
+curl http://localhost:8080/api/v1/system/status
 ```
 
----
+返回：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "initialized": false,
+    "needs_setup": true
+  }
+}
+```
+
+### 2. 创建首个 Admin Key
+
+```bash
+curl -X POST http://localhost:8080/api/v1/system/setup \
+  -H "Content-Type: application/json" \
+  -d "{\"admin_key_name\":\"Admin Key\"}"
+```
+
+返回值里的 `raw_key` 只会出现这一次。
+
+### 3. 后续请求都带上 `X-Api-Key`
+
+```bash
+curl -H "X-Api-Key: <admin-key>" http://localhost:8080/api/v1/account-types/
+```
+
+## API Key 角色
+
+### `admin`
+
+拥有全部后台接口权限。
+
+特点：
+
+- 只能在系统初始化时创建
+- 一旦系统里已经存在启用中的 Admin Key，就不能再创建新的 Admin Key
+
+### `webhook`
+
+用于外部系统触发 Trigger。
+
+特点：
+
+- 可以限制到单个 `slug`
+- 不限制时 `webhook_scope="*"`
+- 可用于请求 `/webhooks/{slug}`
+
+### `internal`
+
+系统自动生成，供 OctoModule 内部 API 使用。
+
+特点：
+
+- 存储在数据库系统配置中
+- API 和 Worker 启动时会自动检查并补齐
+- 不建议手工创建或复用
 
 ## 管理 API Key
 
-打开控制台 **API Keys** 页面，可以：
+接口：
 
-- **创建**：指定名称、角色（admin / webhook）和 Webhook 范围
-- **启用 / 禁用**：通过开关控制密钥是否有效，禁用后立即生效
-- **删除**：删除后立即失效，不可恢复
+- `GET /api/v1/api-keys/`
+- `POST /api/v1/api-keys/`
+- `PATCH /api/v1/api-keys/{id}`
+- `DELETE /api/v1/api-keys/{id}`
 
-> 创建密钥只有一次机会看到原始密钥，请在创建对话框关闭前复制。
+创建 Webhook Key 示例：
 
----
-
-## Webhook Key（角色 = webhook）
-
-Webhook Key 专门用于外部系统触发 Trigger，不能访问其他管理接口。
-
-创建时可以设置 **Webhook 范围**：
-- `*`（默认）：允许触发所有 Trigger
-- 具体的 slug（如 `partner-a-register`）：只允许触发该 Trigger
-
-### 使用方式
-
-外部系统在请求头中携带 Webhook Key：
-
-```bash
-curl -X POST http://localhost:8080/webhooks/partner-a-register \
-  -H "X-Api-Key: octo_webhookkey..."
+```json
+{
+  "name": "partner-a",
+  "role": "webhook",
+  "webhook_scope": "partner-a-register"
+}
 ```
 
-也可以继续使用旧版 Bearer Token 方式（Trigger 创建时会生成一个专属 token）：
+返回时同样只会给一次 `raw_key`。
 
-```bash
-curl -X POST http://localhost:8080/webhooks/partner-a-register \
-  -H "Authorization: Bearer <trigger_token>"
+禁用 Key：
+
+```json
+{
+  "enabled": false
+}
 ```
 
----
+## Trigger 的两种鉴权方式
 
-## 登录 / 重新登录
+### 方式一：Bearer Token
 
-如果密钥失效（被删除或禁用），控制台会在下次页面访问时自动检测并跳转到 `/auth` 页面，要求重新输入有效的 Admin Key。
+每个 Trigger 创建时都会生成独立 token。
 
-验证逻辑：输入密钥后，控制台调用 `GET /api/v1/api-keys/` 进行服务端验证。返回 `code: 401` 表示密钥无效；成功则跳转回原目标页。
+请求示例：
 
----
+```bash
+curl -X POST https://localhost:8080/webhooks/demo \
+  -H "Authorization: Bearer <trigger-token>" \
+  -H "Content-Type: application/json" \
+  -d "{}"
+```
 
-## 不需要鉴权的接口
+### 方式二：Webhook API Key
 
-以下接口无论是否已初始化都可以直接访问：
+请求示例：
 
-| 接口 | 说明 |
-| --- | --- |
-| `GET /api/v1/system/status` | 查询系统是否已初始化 |
-| `POST /api/v1/system/setup` | 创建第一个 Admin Key（已有 Admin Key 时返回错误） |
-| `GET /health` | 健康检查 |
+```bash
+curl -X POST https://localhost:8080/webhooks/demo \
+  -H "X-Api-Key: <webhook-key>" \
+  -H "Content-Type: application/json" \
+  -d "{}"
+```
 
-`POST /api/v1/system/migrate` 迁移接口需要鉴权（引导模式下放行）。
+校验规则：
 
----
+- `admin` 可以触发任意 Trigger
+- `webhook` 只有 `webhook_scope="*"` 或与当前 `slug` 一致时才能触发
 
-## 密钥存储安全说明
+## 控制台登录
 
-- 密钥原文只在创建时展示一次，之后只存哈希值（bcrypt）
-- `key_prefix` 存储密钥前 8 位明文，用于在列表中辨认密钥
-- 密钥格式：`octo_` 前缀 + 随机字符串
-- 控制台将密钥存在浏览器 localStorage，请勿在公共设备上长期保存
+前端不会额外做账号体系登录，而是把 Admin Key 保存在浏览器本地，用它去请求后端。
+
+这意味着：
+
+- 换浏览器或清空站点存储后需要重新输入 Admin Key
+- 只要 Key 失效、被删或被禁用，控制台就会重新要求登录
+
+## 安全建议
+
+- 把 `raw_key` 当作密码对待，只保存在密码管理器或安全变量里
+- 生产环境建议上传正式证书，不要长期暴露自签名证书
+- 对外只发放 `webhook` Key，不要把 `admin` Key 放进自动化脚本
+- 模块内部如需访问后台，优先使用系统注入的 `context.api_token`，不要把管理 Key 硬编码到脚本里
+
+## 常用接口示例
+
+查看 API Key 列表：
+
+```bash
+curl -H "X-Api-Key: <admin-key>" http://localhost:8080/api/v1/api-keys/
+```
+
+创建 Webhook Key：
+
+```bash
+curl -X POST http://localhost:8080/api/v1/api-keys/ \
+  -H "X-Api-Key: <admin-key>" \
+  -H "Content-Type: application/json" \
+  -d "{\"name\":\"partner-a\",\"role\":\"webhook\",\"webhook_scope\":\"partner-a-register\"}"
+```

@@ -40,6 +40,11 @@ func (a *Adapter) ExecuteAction(ctx context.Context, request adapter.ActionReque
 		err    error
 	)
 
+	runBridge := a.bridge
+	if request.LogSink != nil {
+		runBridge.OnLog = request.LogSink
+	}
+
 	input := bridge.Input{
 		Action: request.Action,
 		Account: bridge.InputAccount{
@@ -50,20 +55,39 @@ func (a *Adapter) ExecuteAction(ctx context.Context, request adapter.ActionReque
 		Context: bridge.InputContext{
 			TenantID:  request.TenantID,
 			RequestID: request.RequestID,
+			Protocol:  "ndjson.v1",
+			APIURL:    request.APIURL,
+			APIToken:  request.APIToken,
 		},
 	}
 
 	if scriptPath != "" {
-		output, err = a.bridge.ExecuteWithScript(ctx, scriptPath, input)
+		output, err = runBridge.ExecuteWithScript(ctx, scriptPath, input)
 	} else {
-		output, err = a.bridge.Execute(ctx, input)
+		output, err = runBridge.Execute(ctx, input)
 	}
 	if err != nil {
+		var runErr *bridge.ExecutionError
+		if errors.As(err, &runErr) {
+			return adapter.Result{Logs: append([]string(nil), runErr.Logs...)}, err
+		}
 		return adapter.Result{}, err
 	}
 
 	if output.Status != "success" {
-		return adapter.Result{}, fmt.Errorf("%s: %s", output.ErrorCode, output.ErrorMessage)
+		errCode := strings.TrimSpace(output.ErrorCode)
+		errMessage := strings.TrimSpace(output.ErrorMessage)
+		if errCode == "" {
+			errCode = "EXECUTION_FAILED"
+		}
+		if errMessage == "" {
+			errMessage = "module execution failed"
+		}
+		return adapter.Result{
+			Status: output.Status,
+			Result: output.Result,
+			Logs:   append([]string(nil), output.Logs...),
+		}, fmt.Errorf("%s: %s", errCode, errMessage)
 	}
 
 	var session *adapter.Session
@@ -79,5 +103,6 @@ func (a *Adapter) ExecuteAction(ctx context.Context, request adapter.ActionReque
 		Status:  output.Status,
 		Result:  output.Result,
 		Session: session,
+		Logs:    append([]string(nil), output.Logs...),
 	}, nil
 }

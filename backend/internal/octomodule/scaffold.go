@@ -40,9 +40,15 @@ func buildTemplate(typeKey string) string {
 	}
 
 	return `#!/usr/bin/env python3
-import json
+from __future__ import annotations
+
+import os
 import sys
 from datetime import datetime, timezone
+from typing import Any
+
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+import octo
 
 TYPE_KEY = '` + normalized + `'
 
@@ -51,19 +57,23 @@ def now_utc() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def as_dict(value):
+def as_dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
-def success(result: dict, session: dict | None = None) -> dict:
-    payload = {"status": "success", "result": result}
+def success(result: dict[str, Any], session: dict[str, Any] | None = None) -> dict[str, Any]:
+    payload: dict[str, Any] = {"status": "success", "result": result}
     if session is not None:
         payload["session"] = session
     return payload
 
 
-def error(code: str, message: str, details: dict | None = None) -> dict:
-    payload = {"status": "error", "error_code": code, "error_message": message}
+def error(code: str, message: str, details: dict[str, Any] | None = None) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "status": "error",
+        "error_code": code,
+        "error_message": message,
+    }
     if details:
         payload["result"] = {"details": details}
     return payload
@@ -72,12 +82,12 @@ def error(code: str, message: str, details: dict | None = None) -> dict:
 # ── Action handlers ───────────────────────────────────────────────────────────
 # Each handler receives (identifier, spec, params) and returns success() or error().
 
-def handle_register(identifier: str, spec: dict, params: dict) -> dict:
+def handle_register(identifier: str, spec: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]:
     # TODO: implement
     return success({"event": "registered", "identifier": identifier, "handled_at": now_utc()})
 
 
-def handle_verify(identifier: str, spec: dict, params: dict) -> dict:
+def handle_verify(identifier: str, spec: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]:
     # TODO: implement
     return success({"event": "verified", "identifier": identifier, "handled_at": now_utc()})
 
@@ -91,30 +101,26 @@ ACTIONS = {
 }
 
 
-def main() -> int:
-    try:
-        request = json.loads(sys.stdin.read())
-    except Exception:
-        print(json.dumps(error("BAD_INPUT", "invalid json input")))
-        return 0
-
+def execute(request: dict[str, Any]) -> dict[str, Any]:
     action = str(request.get("action", "")).strip().upper()
     account = as_dict(request.get("account"))
     identifier = str(account.get("identifier", "")).strip()
     if not identifier:
-        print(json.dumps(error("VALIDATION_FAILED", "account.identifier is required")))
-        return 0
+        return error("VALIDATION_FAILED", "account.identifier is required")
 
     spec = as_dict(account.get("spec"))
     params = as_dict(request.get("params"))
 
     handler = ACTIONS.get(action)
     if handler is None:
-        print(json.dumps(error("UNSUPPORTED_ACTION", f"unsupported action: {action}")))
-        return 0
+        return error("UNSUPPORTED_ACTION", f"unsupported action: {action}")
 
-    print(json.dumps(handler(identifier, spec, params)))
-    return 0
+    return handler(identifier, spec, params)
+
+
+def main() -> int:
+    # Serve mode only: read NDJSON requests from stdin continuously.
+    return octo.run_module(execute)
 
 
 if __name__ == "__main__":

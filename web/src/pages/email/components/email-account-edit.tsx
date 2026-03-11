@@ -63,7 +63,7 @@ export function EmailAccountEdit({ account, open, onOpenChange, onSuccess }: Ema
       setGraphConfigError(null);
       return true;
     } catch {
-      setGraphConfigError("无效的 JSON 格式");
+      setGraphConfigError("JSON 格式不正确，请检查括号、引号和逗号是否成对。");
       return false;
     }
   }
@@ -108,7 +108,7 @@ export function EmailAccountEdit({ account, open, onOpenChange, onSuccess }: Ema
               id="edit-provider"
               value={provider}
               onChange={(e) => setProvider(e.target.value)}
-              placeholder="如: outlook, hotmail"
+              placeholder="例如 outlook"
             />
           </div>
 
@@ -126,7 +126,7 @@ export function EmailAccountEdit({ account, open, onOpenChange, onSuccess }: Ema
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="edit-graph-config">Graph Config (JSON)</Label>
+            <Label htmlFor="edit-graph-config">高级配置（JSON）</Label>
             <textarea
               id="edit-graph-config"
               className="w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
@@ -138,6 +138,9 @@ export function EmailAccountEdit({ account, open, onOpenChange, onSuccess }: Ema
               }}
               spellCheck={false}
             />
+            <p className="text-xs text-muted-foreground">
+              只在排查问题或明确知道要修改底层参数时再编辑这里。不确定时不要改。
+            </p>
             {graphConfigError && (
               <p className="text-xs text-destructive">{graphConfigError}</p>
             )}

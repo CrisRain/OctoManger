@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 
 	"octomanger/backend/internal/dto"
 	"octomanger/backend/internal/model"
@@ -150,7 +151,7 @@ func (s *apiKeyService) ValidateAdminKey(ctx context.Context, rawKey string) (*d
 	if err != nil {
 		return nil, err
 	}
-	if resp.Role != model.ApiKeyRoleAdmin {
+	if resp.Role != model.ApiKeyRoleAdmin && resp.Role != model.ApiKeyRoleInternal {
 		return nil, unauthorized("api key does not have admin role")
 	}
 	return resp, nil
@@ -211,3 +212,57 @@ func apiKeyToResponse(item *model.ApiKey) dto.ApiKeyResponse {
 }
 
 var _ ApiKeyService = (*apiKeyService)(nil)
+
+const internalKeyConfigKey = "internal_api_token"
+
+// EnsureInternalKey returns a stable internal API token for OctoModule scripts.
+// The raw token is persisted in system_config so it survives restarts.
+// On first call (or if the stored token is stale) a new key is generated.
+func EnsureInternalKey(ctx context.Context, apiKeyRepo repository.ApiKeyRepository, systemConfigRepo repository.SystemConfigRepository) (string, error) {
+	// Try to read the cached raw token from system_config.
+	if cfg, err := systemConfigRepo.GetByKey(ctx, internalKeyConfigKey); err == nil {
+		var rawKey string
+		if json.Unmarshal(cfg.Value, &rawKey) == nil && rawKey != "" {
+			hash := hashToken(rawKey)
+			if key, err := apiKeyRepo.GetByHash(ctx, hash); err == nil && key.Enabled && key.Role == model.ApiKeyRoleInternal {
+				return rawKey, nil
+			}
+		}
+	}
+
+	// Purge stale internal keys before creating a new one.
+	if items, err := apiKeyRepo.List(ctx); err == nil {
+		for _, item := range items {
+			if item.Role == model.ApiKeyRoleInternal {
+				_ = apiKeyRepo.Delete(ctx, item.ID)
+			}
+		}
+	}
+
+	raw, err := generateSecureToken(32)
+	if err != nil {
+		return "", internalError("failed to generate internal api key", err)
+	}
+	hash := hashToken(raw)
+	prefix := raw[:8]
+
+	item := &model.ApiKey{
+		Name:      "__internal__",
+		KeyHash:   hash,
+		KeyPrefix: prefix,
+		Role:      model.ApiKeyRoleInternal,
+		Enabled:   true,
+	}
+	if err := apiKeyRepo.Create(ctx, item); err != nil {
+		return "", internalError("failed to create internal api key", err)
+	}
+
+	rawJSON, _ := json.Marshal(raw)
+	_ = systemConfigRepo.Upsert(ctx, &model.SystemConfig{
+		Key:         internalKeyConfigKey,
+		Value:       rawJSON,
+		Description: "Internal API token for OctoModule scripts",
+	})
+
+	return raw, nil
+}

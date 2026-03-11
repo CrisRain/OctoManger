@@ -3,8 +3,9 @@ package model
 import "time"
 
 const (
-    ApiKeyRoleAdmin   = "admin"
-    ApiKeyRoleWebhook = "webhook"
+    ApiKeyRoleAdmin    = "admin"
+    ApiKeyRoleWebhook  = "webhook"
+    ApiKeyRoleInternal = "internal"
 
     ApiKeyWebhookScopeAll = "*"
 )

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"strings"
 
 	"github.com/hibiken/asynq"
@@ -78,12 +79,25 @@ func main() {
 		},
 	)
 
+	remoteServiceURL := strings.TrimSpace(cfg.OctoModuleService.URL)
+	if remoteServiceURL == "" {
+		log.Fatal("octomodule_service.url is required; stdin/stdout bridge is disabled")
+	}
 	pythonBridge := bridge.PythonBridge{
-		Binary:  cfg.Python.Bin,
-		Script:  cfg.Python.Script,
-		Timeout: cfg.Python.Timeout(),
+		Binary:       cfg.Python.Bin,
+		Script:       cfg.Python.Script,
+		Timeout:      cfg.Python.Timeout(),
+		ServiceURL:   remoteServiceURL,
+		ServiceToken: strings.TrimSpace(cfg.OctoModuleService.Token),
+		ForceRemote:  true,
 	}
 
+	apiKeyRepo := repository.NewApiKeyRepository(db)
+	systemConfigRepo := repository.NewSystemConfigRepository(db)
+	internalToken, tokenErr := service.EnsureInternalKey(context.Background(), apiKeyRepo, systemConfigRepo)
+	if tokenErr != nil {
+		log.Warn("could not ensure internal api key", zap.Error(tokenErr))
+	}
 	jobHandler := taskhandler.NewJobHandler(taskhandler.JobHandlerOptions{
 		Logger:             log,
 		JobRepo:            repository.NewJobRepository(db),
@@ -93,6 +107,8 @@ func main() {
 		AccountSessionRepo: repository.NewAccountSessionRepository(db),
 		PythonBridge:       pythonBridge,
 		ModuleDir:          strings.TrimSpace(cfg.Paths.OctoModuleDir),
+		InternalAPIURL:     internalAPIURL(cfg),
+		InternalAPIToken:   internalToken,
 	})
 	batchHandler := taskhandler.NewBatchHandler(taskhandler.BatchHandlerOptions{
 		Logger:           log,
@@ -100,7 +116,7 @@ func main() {
 		EmailAccountRepo: repository.NewEmailAccountRepository(db),
 		JobRepo:          repository.NewJobRepository(db),
 		JobRunRepo:       repository.NewJobRunRepository(db),
-		BatchRegistrar:   service.NewGoEmailBatchRegistrar(),
+		BatchRegistrar:   service.NewOutlookEmailBatchRegistrar(pythonBridge, strings.TrimSpace(cfg.Paths.OctoModuleDir)),
 	})
 
 	mux := asynq.NewServeMux()
@@ -116,4 +132,16 @@ func main() {
 	if err := srv.Run(mux); err != nil {
 		log.Fatal("worker failed", zap.Error(err))
 	}
+}
+
+func internalAPIURL(cfg config.Config) string {
+	port := strings.TrimSpace(cfg.Server.Port)
+	if port == "" {
+		port = "8080"
+	}
+	port = strings.TrimPrefix(port, ":")
+	if cfg.Server.TLS {
+		return "https://127.0.0.1:" + port
+	}
+	return "http://127.0.0.1:" + port
 }

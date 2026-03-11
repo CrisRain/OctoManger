@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import React from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -65,6 +66,22 @@ const mockState = vi.hoisted(() => {
       status: 2,
       created_at: "2026-03-07T00:00:00Z",
       updated_at: "2026-03-07T00:00:00Z",
+    };
+  }
+
+  function jobRunFixture() {
+    return {
+      id: 301,
+      job_id: 21,
+      job_type_key: "generic_demo",
+      job_action_key: "REGISTER",
+      account_id: 7,
+      worker_id: "worker",
+      attempt: 1,
+      status: "success" as const,
+      logs: ["step 1", "step 2"],
+      started_at: "2026-03-07T00:00:00Z",
+      ended_at: "2026-03-07T00:00:05Z",
     };
   }
 
@@ -170,6 +187,10 @@ const mockState = vi.hoisted(() => {
         };
       case "listJobs":
         return { items: [jobFixture()], total: 1, limit: 10, offset: 0 };
+      case "getJobSummary":
+        return { total: 1, queued: 0, running: 0, done: 1, failed: 0, canceled: 0, active: 0 };
+      case "listJobRuns":
+        return { items: [jobRunFixture()], total: 1, limit: 20, offset: 0 };
       case "getJob":
       case "createJob":
       case "patchJob":
@@ -209,6 +230,7 @@ const mockState = vi.hoisted(() => {
               job_action_key: "REGISTER",
               worker_id: "worker",
               attempt: 1,
+              status: "success",
               started_at: "2026-03-07T00:00:00Z",
             },
           ],
@@ -352,9 +374,22 @@ import { ApiKeysPage } from "@/pages/api-keys-page";
 import { DashboardPage } from "@/pages/dashboard-page";
 import { EmailAccountsOutlookPage } from "@/pages/email-accounts-outlook-page";
 import { JobsPage } from "@/pages/jobs-page";
+import { LogsPage } from "@/pages/logs-page";
 import { OctoModulesPage } from "@/pages/octo-modules-page";
 import { SettingsPage } from "@/pages/settings-page";
 import { TriggersPage } from "@/pages/triggers-page";
+
+function renderWithProviders(ui: React.ReactElement) {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+      },
+    },
+  });
+
+  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
+}
 
 describe("frontend smoke renders", () => {
   beforeEach(() => {
@@ -363,7 +398,7 @@ describe("frontend smoke renders", () => {
   });
 
   it("renders AppShell with nested outlet", async () => {
-    render(
+    renderWithProviders(
       <MemoryRouter initialEntries={["/dashboard"]}>
         <Routes>
           <Route element={<AppShell />}>
@@ -378,7 +413,7 @@ describe("frontend smoke renders", () => {
   });
 
   it("renders dashboard page", async () => {
-    render(
+    renderWithProviders(
       <MemoryRouter>
         <DashboardPage />
       </MemoryRouter>,
@@ -389,7 +424,7 @@ describe("frontend smoke renders", () => {
   });
 
   it("renders account types page", async () => {
-    render(
+    renderWithProviders(
       <MemoryRouter>
         <AccountTypesPage />
       </MemoryRouter>,
@@ -399,7 +434,7 @@ describe("frontend smoke renders", () => {
   });
 
   it("renders accounts page with route params", async () => {
-    render(
+    renderWithProviders(
       <MemoryRouter initialEntries={["/accounts/generic_demo"]}>
         <Routes>
           <Route path="/accounts/:typeKey" element={<AccountsPage />} />
@@ -412,7 +447,7 @@ describe("frontend smoke renders", () => {
   });
 
   it("renders email accounts outlook page", async () => {
-    render(
+    renderWithProviders(
       <MemoryRouter>
         <EmailAccountsOutlookPage />
       </MemoryRouter>,
@@ -423,17 +458,29 @@ describe("frontend smoke renders", () => {
   });
 
   it("renders jobs page", async () => {
-    render(
+    renderWithProviders(
       <MemoryRouter>
         <JobsPage />
       </MemoryRouter>,
     );
 
     expect(await screen.findByText("REGISTER")).toBeInTheDocument();
+    await waitFor(() => expect(mockState.apiFn("getJobSummary")).toHaveBeenCalled());
+  });
+
+  it("renders logs page", async () => {
+    renderWithProviders(
+      <MemoryRouter initialEntries={["/logs?job_id=21"]}>
+        <LogsPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("generic_demo")).toBeInTheDocument();
+    await waitFor(() => expect(mockState.apiFn("listJobRuns")).toHaveBeenCalled());
   });
 
   it("renders api keys page", async () => {
-    render(
+    renderWithProviders(
       <MemoryRouter>
         <ApiKeysPage />
       </MemoryRouter>,
@@ -443,7 +490,7 @@ describe("frontend smoke renders", () => {
   });
 
   it("renders settings page", async () => {
-    render(
+    renderWithProviders(
       <MemoryRouter>
         <SettingsPage />
       </MemoryRouter>,
@@ -455,7 +502,7 @@ describe("frontend smoke renders", () => {
   });
 
   it("renders triggers page", async () => {
-    render(
+    renderWithProviders(
       <MemoryRouter>
         <TriggersPage />
       </MemoryRouter>,
@@ -466,7 +513,7 @@ describe("frontend smoke renders", () => {
   });
 
   it("preselects the first generic type when creating a trigger", async () => {
-    render(
+    renderWithProviders(
       <MemoryRouter>
         <TriggersPage />
       </MemoryRouter>,
@@ -482,7 +529,7 @@ describe("frontend smoke renders", () => {
   it("shows a clear empty-state when no generic account types exist", async () => {
     mockState.apiFn("listAccountTypes").mockResolvedValueOnce([]);
 
-    render(
+    renderWithProviders(
       <MemoryRouter>
         <TriggersPage />
       </MemoryRouter>,
@@ -498,7 +545,7 @@ describe("frontend smoke renders", () => {
   });
 
   it("renders octo modules page", async () => {
-    render(
+    renderWithProviders(
       <MemoryRouter>
         <OctoModulesPage />
       </MemoryRouter>,
@@ -510,7 +557,7 @@ describe("frontend smoke renders", () => {
   it("renders oauth callback route through App", async () => {
     window.history.pushState({}, "", "/oauth/callback?code=code-123");
 
-    render(
+    renderWithProviders(
       <BrowserRouter>
         <App />
       </BrowserRouter>,

@@ -1,5 +1,5 @@
 // Package main is the unified entry point for OctoManger.
-// It runs any combination of the four services in a single process.
+// It runs any combination of services in a single process.
 //
 // Usage:
 //
@@ -7,7 +7,7 @@
 //	go run ./cmd/octomanger -services=api,worker     # selected services
 //	SERVICES=api,worker go run ./cmd/octomanger      # via env var
 //
-// Available service names: api, worker, scheduler, daemon
+// Available service names: api, worker, scheduler, daemon, octomodule
 package main
 
 import (
@@ -32,9 +32,11 @@ import (
 
 	"octomanger/backend/config"
 	"octomanger/backend/internal/daemon"
+	"octomanger/backend/internal/octomodsvc"
 	"octomanger/backend/internal/repository"
 	"octomanger/backend/internal/router"
 	"octomanger/backend/internal/scheduler"
+	"octomanger/backend/internal/server"
 	"octomanger/backend/internal/service"
 	"octomanger/backend/internal/task"
 	taskhandler "octomanger/backend/internal/task/handler"
@@ -47,7 +49,7 @@ import (
 
 func main() {
 	var servicesFlag string
-	flag.StringVar(&servicesFlag, "services", "", "comma-separated services to run: api,worker,scheduler,daemon (default: all)")
+	flag.StringVar(&servicesFlag, "services", "", "comma-separated services to run: api,worker,scheduler,daemon,octomodule (default: all)")
 	flag.Parse()
 
 	if servicesFlag == "" {
@@ -103,16 +105,37 @@ func main() {
 		Password: cfg.Redis.Password,
 		DB:       cfg.Redis.DB,
 	}
+	remoteServiceURL := strings.TrimSpace(cfg.OctoModuleService.URL)
+	if remoteServiceURL == "" {
+		log.Fatal("octomodule_service.url is required; stdin/stdout bridge is disabled")
+	}
 	pythonBridge := bridge.PythonBridge{
-		Binary:  cfg.Python.Bin,
-		Script:  cfg.Python.Script,
-		Timeout: cfg.Python.Timeout(),
+		Binary:       cfg.Python.Bin,
+		Script:       cfg.Python.Script,
+		Timeout:      cfg.Python.Timeout(),
+		ServiceURL:   remoteServiceURL,
+		ServiceToken: strings.TrimSpace(cfg.OctoModuleService.Token),
+		ForceRemote:  true,
 	}
 	moduleDir := strings.TrimSpace(cfg.Paths.OctoModuleDir)
 
 	log.Info("octomanger starting", zap.Strings("services", sortedKeys(enabled)))
+	if !cfg.OctoModuleService.Embedded {
+		log.Info(
+			"embedded octomodule service disabled; using external service",
+			zap.String("url", remoteServiceURL),
+		)
+	}
 
 	var wg sync.WaitGroup
+
+	if enabled["octomodule"] && cfg.OctoModuleService.Embedded {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			runOctoModuleService(ctx, cfg, log)
+		}()
+	}
 
 	if enabled["api"] {
 		wg.Add(1)
@@ -179,10 +202,29 @@ func runAPI(ctx context.Context, cfg config.Config, db *gorm.DB, log *zap.Logger
 
 	accountTypeSvc := service.NewAccountTypeService(accountTypeRepo, moduleDir)
 	accountSvc := service.NewAccountService(accountRepo, accountTypeRepo, dispatcher, jobRepo)
-	emailSvc := service.NewEmailAccountService(emailAccountRepo, service.NewGoEmailBatchRegistrar(), dispatcher, redisClient, jobRepo)
-	octoSvc := service.NewOctoModuleService(accountTypeRepo, jobRunRepo, pythonBridge, moduleDir, cfg.Python.Bin)
-	jobSvc := service.NewJobService(jobRepo, jobRunRepo, accountTypeRepo, dispatcher)
+	emailSvc := service.NewEmailAccountService(
+		emailAccountRepo,
+		service.NewOutlookEmailBatchRegistrar(pythonBridge, strings.TrimSpace(cfg.Paths.OctoModuleDir)),
+		dispatcher,
+		redisClient,
+		jobRepo,
+	)
 	apiKeySvc := service.NewApiKeyService(apiKeyRepo)
+	internalToken, tokenErr := service.EnsureInternalKey(context.Background(), apiKeyRepo, systemConfigRepo)
+	if tokenErr != nil {
+		log.Warn("could not ensure internal api key", zap.Error(tokenErr))
+	}
+	octoSvc := service.NewOctoModuleService(
+		accountTypeRepo,
+		jobRunRepo,
+		pythonBridge,
+		moduleDir,
+		cfg.Python.Bin,
+		internalAPIURL(cfg),
+		internalToken,
+	)
+	octoInternalSvc := service.NewOctoModuleInternalService(accountRepo, emailSvc)
+	jobSvc := service.NewJobService(jobRepo, jobRunRepo, accountTypeRepo, dispatcher)
 	jobExecutor := service.NewJobExecutor(service.JobExecutorOptions{
 		Logger:             log,
 		JobRepo:            jobRepo,
@@ -192,6 +234,8 @@ func runAPI(ctx context.Context, cfg config.Config, db *gorm.DB, log *zap.Logger
 		AccountSessionRepo: accountSessionRepo,
 		PythonBridge:       pythonBridge,
 		ModuleDir:          moduleDir,
+		InternalAPIURL:     internalAPIURL(cfg),
+		InternalAPIToken:   internalToken,
 	})
 	triggerSvc := service.NewTriggerService(triggerRepo, accountTypeRepo, jobRepo, dispatcher, jobExecutor)
 	systemConfigSvc := service.NewSystemConfigService(systemConfigRepo)
@@ -203,6 +247,7 @@ func runAPI(ctx context.Context, cfg config.Config, db *gorm.DB, log *zap.Logger
 			Account:      accountSvc,
 			EmailAccount: emailSvc,
 			OctoModule:   octoSvc,
+			OctoInternal: octoInternalSvc,
 			Job:          jobSvc,
 			ApiKey:       apiKeySvc,
 			Trigger:      triggerSvc,
@@ -223,6 +268,11 @@ func runAPI(ctx context.Context, cfg config.Config, db *gorm.DB, log *zap.Logger
 		IdleTimeout:  60 * time.Second,
 	}
 
+	var (
+		ln              net.Listener
+		httpRedirectSrv *http.Server
+	)
+
 	if cfg.Server.TLS {
 		mgr := tlsmgr.New(systemConfigSvc)
 		if err := mgr.EnsureCert(context.Background()); err != nil {
@@ -230,16 +280,40 @@ func runAPI(ctx context.Context, cfg config.Config, db *gorm.DB, log *zap.Logger
 		}
 		srv.TLSConfig = mgr.TLSConfig()
 
-		if httpPort := strings.TrimSpace(cfg.Server.HTTPPort); httpPort != "" {
-			httpAddr := normalizeAddr(httpPort)
-			httpsPort := strings.TrimPrefix(addr, ":")
-			go startHTTPRedirect(ctx, httpAddr, httpsPort, log)
+		var listenErr error
+		ln, listenErr = net.Listen("tcp", addr)
+		if listenErr != nil {
+			log.Fatal("failed to listen", zap.Error(listenErr))
 		}
+
+		tlsL, httpL := server.DemuxListener(ln)
+		httpsPort := strings.TrimPrefix(addr, ":")
 
 		go func() {
 			log.Info("api server started (TLS)", zap.String("addr", addr))
-			if err := srv.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			if err := srv.ServeTLS(tlsL, "", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				log.Fatal("api server failed", zap.Error(err))
+			}
+		}()
+
+		httpRedirectSrv = &http.Server{
+			ReadTimeout: 10 * time.Second,
+			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				host := r.Host
+				if h, _, err := net.SplitHostPort(host); err == nil {
+					host = h
+				}
+				target := "https://" + host
+				if httpsPort != "443" {
+					target += ":" + httpsPort
+				}
+				target += r.RequestURI
+				http.Redirect(w, r, target, http.StatusMovedPermanently)
+			}),
+		}
+		go func() {
+			if err := httpRedirectSrv.Serve(httpL); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Warn("http redirect listener stopped", zap.Error(err))
 			}
 		}()
 	} else {
@@ -257,32 +331,15 @@ func runAPI(ctx context.Context, cfg config.Config, db *gorm.DB, log *zap.Logger
 	if err := srv.Shutdown(shutCtx); err != nil {
 		log.Error("api server shutdown failed", zap.Error(err))
 	}
-	log.Info("api server stopped")
-}
-
-func startHTTPRedirect(ctx context.Context, httpAddr, httpsPort string, log *zap.Logger) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		host := r.Host
-		if h, _, err := net.SplitHostPort(host); err == nil {
-			host = h
+	if httpRedirectSrv != nil {
+		if err := httpRedirectSrv.Shutdown(shutCtx); err != nil {
+			log.Error("http redirect server shutdown failed", zap.Error(err))
 		}
-		target := "https://" + host
-		if httpsPort != "443" {
-			target += ":" + httpsPort
-		}
-		target += r.RequestURI
-		http.Redirect(w, r, target, http.StatusMovedPermanently)
-	})
-	srv := &http.Server{Addr: httpAddr, Handler: mux, ReadTimeout: 10 * time.Second}
-	go func() {
-		<-ctx.Done()
-		_ = srv.Shutdown(context.Background())
-	}()
-	log.Info("http redirect server started", zap.String("addr", httpAddr))
-	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Warn("http redirect server stopped", zap.Error(err))
 	}
+	if ln != nil {
+		_ = ln.Close()
+	}
+	log.Info("api server stopped")
 }
 
 func runWorker(ctx context.Context, cfg config.Config, db *gorm.DB, log *zap.Logger,
@@ -298,6 +355,12 @@ func runWorker(ctx context.Context, cfg config.Config, db *gorm.DB, log *zap.Log
 		Queues:      map[string]int{"critical": 6, "default": 3, "low": 1},
 	})
 
+	workerAPIKeyRepo := repository.NewApiKeyRepository(db)
+	workerSysCfgRepo := repository.NewSystemConfigRepository(db)
+	workerToken, workerTokenErr := service.EnsureInternalKey(context.Background(), workerAPIKeyRepo, workerSysCfgRepo)
+	if workerTokenErr != nil {
+		log.Warn("could not ensure internal api key for worker", zap.Error(workerTokenErr))
+	}
 	jobHandler := taskhandler.NewJobHandler(taskhandler.JobHandlerOptions{
 		Logger:             log,
 		JobRepo:            repository.NewJobRepository(db),
@@ -307,6 +370,8 @@ func runWorker(ctx context.Context, cfg config.Config, db *gorm.DB, log *zap.Log
 		AccountSessionRepo: repository.NewAccountSessionRepository(db),
 		PythonBridge:       pythonBridge,
 		ModuleDir:          moduleDir,
+		InternalAPIURL:     internalAPIURL(cfg),
+		InternalAPIToken:   workerToken,
 	})
 	batchHandler := taskhandler.NewBatchHandler(taskhandler.BatchHandlerOptions{
 		Logger:           log,
@@ -314,7 +379,7 @@ func runWorker(ctx context.Context, cfg config.Config, db *gorm.DB, log *zap.Log
 		EmailAccountRepo: repository.NewEmailAccountRepository(db),
 		JobRepo:          repository.NewJobRepository(db),
 		JobRunRepo:       repository.NewJobRunRepository(db),
-		BatchRegistrar:   service.NewGoEmailBatchRegistrar(),
+		BatchRegistrar:   service.NewOutlookEmailBatchRegistrar(pythonBridge, strings.TrimSpace(cfg.Paths.OctoModuleDir)),
 	})
 
 	mux := asynq.NewServeMux()
@@ -371,15 +436,27 @@ func runDaemon(ctx context.Context, cfg config.Config, db *gorm.DB, log *zap.Log
 	}
 }
 
+func runOctoModuleService(ctx context.Context, cfg config.Config, log *zap.Logger) {
+	if err := octomodsvc.Run(ctx, cfg, log); err != nil {
+		log.Error("octomodule service stopped", zap.Error(err))
+	}
+}
+
 // ── helpers ────────────────────────────────────────────────────────────────────
 
-var allServices = []string{"api", "worker", "scheduler", "daemon"}
+var allServices = []string{"api", "worker", "scheduler", "daemon", "octomodule"}
 
 func parseServices(s string) map[string]bool {
-	all := map[string]bool{"api": true, "worker": true, "scheduler": true, "daemon": true}
+	all := map[string]bool{
+		"api":        true,
+		"worker":     true,
+		"scheduler":  true,
+		"daemon":     true,
+		"octomodule": true,
+	}
 	s = strings.TrimSpace(s)
 	if s == "" || s == "all" {
-		return all
+		return withDependencies(all)
 	}
 	enabled := make(map[string]bool)
 	for _, part := range strings.Split(s, ",") {
@@ -389,7 +466,14 @@ func parseServices(s string) map[string]bool {
 		}
 	}
 	if len(enabled) == 0 {
-		return all
+		return withDependencies(all)
+	}
+	return withDependencies(enabled)
+}
+
+func withDependencies(enabled map[string]bool) map[string]bool {
+	if enabled["api"] || enabled["worker"] || enabled["daemon"] {
+		enabled["octomodule"] = true
 	}
 	return enabled
 }
@@ -412,4 +496,12 @@ func normalizeAddr(port string) string {
 		return trimmed
 	}
 	return ":" + trimmed
+}
+
+func internalAPIURL(cfg config.Config) string {
+	port := strings.TrimPrefix(normalizeAddr(cfg.Server.Port), ":")
+	if cfg.Server.TLS {
+		return "https://127.0.0.1:" + port
+	}
+	return "http://127.0.0.1:" + port
 }

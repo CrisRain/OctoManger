@@ -16,6 +16,9 @@ type ActionRequest struct {
 	ModuleScript string         `json:"module_script,omitempty"`
 	Params       map[string]any `json:"params"`
 	Account      Account        `json:"account"`
+	APIURL       string         `json:"api_url,omitempty"`
+	APIToken     string         `json:"api_token,omitempty"`
+	LogSink      func(source, level, message string) `json:"-"`
 }
 
 type Session struct {
@@ -28,6 +31,7 @@ type Result struct {
 	Status  string         `json:"status"`
 	Result  map[string]any `json:"result,omitempty"`
 	Session *Session       `json:"session,omitempty"`
+	Logs    []string       `json:"logs,omitempty"`
 }
 
 type Adapter interface {

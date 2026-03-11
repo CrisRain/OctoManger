@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"go.uber.org/zap"
@@ -86,6 +87,12 @@ func buildWriteSyncer(path string) (zapcore.WriteSyncer, error) {
 	trimmed := strings.TrimSpace(path)
 	if trimmed == "" {
 		return zapcore.AddSync(os.Stdout), nil
+	}
+
+	if dir := strings.TrimSpace(filepath.Dir(trimmed)); dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, err
+		}
 	}
 
 	file, err := os.OpenFile(trimmed, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)

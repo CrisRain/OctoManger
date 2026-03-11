@@ -53,6 +53,7 @@ func (r *GoEmailBatchRegistrar) Prepare(
 			return EmailBatchPreparedResult{}, fmt.Errorf("marshal graph_config for %s: %w", address, err)
 		}
 		candidates = append(candidates, BatchRegisterCandidate{
+			Index:       i,
 			Address:     address,
 			Provider:    provider,
 			Status:      input.Status,
@@ -64,6 +65,7 @@ func (r *GoEmailBatchRegistrar) Prepare(
 		Requested:  input.Count,
 		Provider:   provider,
 		Candidates: candidates,
+		Failures:   []dto.BatchRegisterEmailFailure{},
 	}, nil
 }
 

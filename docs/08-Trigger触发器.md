@@ -1,196 +1,211 @@
 # Trigger 触发器
 
-Trigger 把外部 Webhook 请求接入 OctoModule 动作，支持同步和异步两种模式。
+Trigger 用来把外部 Webhook 请求映射成内部模块动作，是 OctoManger 对外集成的标准入口。
+
+## Trigger 能做什么
+
+适用场景：
+
+- 合作方推送用户注册事件
+- 外部系统通知你执行某个账号动作
+- 低代码地把“Webhook -> Job”串起来
+
+限制：
+
+- Trigger 只能绑定 `generic` 类型
+- 最终执行的仍然是该类型对应的 OctoModule action
+
+## 数据模型
+
+Trigger 的核心字段：
+
+| 字段 | 说明 |
+| --- | --- |
+| `name` | 展示名 |
+| `slug` | Webhook 路径标识 |
+| `type_key` | 目标账号类型 |
+| `action_key` | 触发的动作 |
+| `mode` | `async` 或 `sync` |
+| `default_selector` | 默认账号筛选 |
+| `default_params` | 默认参数 |
+| `enabled` | 是否启用 |
+| `token_prefix` | 触发 token 前缀 |
+
+创建时会返回一次 `raw_token`，后续不会再返回。
+
+## 访问地址
+
+Webhook 地址固定是：
 
 ```text
-外部系统 → POST /webhooks/:slug → Trigger → Job → Python 模块 → 结果
+/webhooks/{slug}
 ```
 
----
+例如：
 
-## 适用场景
+```text
+https://localhost:8080/webhooks/github-register
+```
 
-- 外部事件（用户注册、订单创建）触发批量账号操作
-- 合作方通过 Webhook 调用平台能力
-- 定时任务触发器（配合 cron 服务定期推送请求）
+## 鉴权方式
 
-**注意**：Trigger 只支持 `generic` 类型的账号，不支持 `email` 类型。
-
----
-
-## 同步 vs 异步模式
-
-| 模式 | 行为 | 适合场景 |
-| --- | --- | --- |
-| `async` | 入 Asynq 队列，立即返回 `{queued: true}`，后台执行 | 不关心实时结果，批量处理 |
-| `sync` | 在 API 进程直接执行，等待完成后返回结果 | 需要实时结果，账号数量少 |
-
----
-
-## 创建 Trigger
-
-打开控制台 **Triggers**，点击"新建 Trigger"：
-
-| 字段 | 说明 |
-| --- | --- |
-| `name` | 显示名称 |
-| `slug` | URL 中的唯一标识，创建后不可修改。如 `partner-a-register` |
-| `type_key` | 目标账号类型（`generic` 类型） |
-| `action_key` | 要执行的动作，如 `REGISTER` |
-| `mode` | `async` 或 `sync` |
-| `default_selector` | 默认账号选择范围（JSON），可被请求覆盖 |
-| `default_params` | 默认参数（JSON），可被请求中的 `extra_params` 覆盖 |
-
-创建成功后，对话框会显示：
-- **Webhook 地址**：`/webhooks/<slug>`
-- **Trigger Token**：只显示一次，请立即保存
-
----
-
-## 触发 Webhook
-
-### 鉴权方式（二选一）
-
-**方式一：Webhook Key（推荐）**
-
-创建一个角色为 `webhook` 的 API Key，在请求头中携带：
+### 方式一：Trigger Bearer Token
 
 ```bash
-curl -X POST http://localhost:8080/webhooks/partner-a-register \
-  -H "X-Api-Key: octo_webhookkey..."
+curl -X POST https://localhost:8080/webhooks/github-register \
+  -H "Authorization: Bearer <trigger-token>" \
+  -H "Content-Type: application/json" \
+  -d "{}"
 ```
 
-**方式二：Trigger Token（Bearer）**
-
-使用创建 Trigger 时生成的专属 token：
+### 方式二：Webhook API Key
 
 ```bash
-curl -X POST http://localhost:8080/webhooks/partner-a-register \
-  -H "Authorization: Bearer <trigger_token>" \
-  -H "Content-Type: application/json"
+curl -X POST https://localhost:8080/webhooks/github-register \
+  -H "X-Api-Key: <webhook-key>" \
+  -H "Content-Type: application/json" \
+  -d "{}"
 ```
 
-### 请求体
+适用规则：
+
+- `admin` Key 可触发全部 Trigger
+- `webhook` Key 需要 `webhook_scope="*"` 或与当前 `slug` 匹配
+
+## async 和 sync
+
+### async
+
+行为：
+
+- 创建 Job
+- 放入队列
+- 立即返回 Job 元信息
+
+适用：
+
+- 执行耗时长
+- 需要批量处理
+- 调用方只关心是否成功入队
+
+### sync
+
+行为：
+
+- 仍然创建 Job
+- 但在 API 进程里直接执行
+- 立即返回执行摘要
+
+适用：
+
+- 需要马上拿结果
+- 账号数量较少
+- 模块执行时间可控
+
+## 请求体
+
+可选请求体结构：
 
 ```json
 {
-  "mode": "sync",
+  "mode": "async",
   "selector": {
-    "account_ids": [1, 2]
+    "identifiers": ["alice"]
   },
   "extra_params": {
-    "invite_code": "ABC123"
+    "force": true
   }
 }
 ```
+
+字段说明：
 
 | 字段 | 说明 |
 | --- | --- |
-| `mode` | `async` 或 `sync`，覆盖 Trigger 的默认模式（可选） |
-| `selector` | 覆盖 Trigger 的 `default_selector`（可选） |
-| `extra_params` | 与 `default_params` 合并，同名字段以 `extra_params` 优先（可选） |
+| `mode` | 可覆盖 Trigger 默认模式 |
+| `selector` | 本次请求额外传入的筛选条件 |
+| `extra_params` | 本次请求额外参数 |
 
-**params 合并逻辑**：`final_params = default_params + extra_params`（extra 优先），系统还会注入 `_trigger` 元数据字段（包含 trigger_id、slug 等）。
+## 参数合并规则
 
----
+后端会做两次合并：
 
-## 响应格式
+1. `default_selector + selector`
+2. `default_params + extra_params`
 
-### async 模式
+后传入的字段会覆盖同名旧字段。
+
+然后系统还会向最终 `params` 里注入 `_trigger` 元数据，例如：
 
 ```json
 {
-  "code": 0,
-  "data": {
-    "queued": true,
-    "job": {
-      "id": 42,
-      "status": "queued"
-    }
+  "_trigger": {
+    "endpoint_id": 1,
+    "slug": "github-register",
+    "type_key": "github",
+    "action_key": "REGISTER",
+    "mode": "async",
+    "selector": {
+      "identifiers": ["alice"]
+    },
+    "fired_at": "2026-03-10T12:00:00Z"
   }
 }
 ```
 
-用 `job.id` 轮询 `GET /api/v1/jobs/{id}` 获取最终结果。
+模块可以读取它做审计、分流或幂等控制。
 
-### sync 模式
+## 返回格式
 
-```json
-{
-  "code": 0,
-  "data": {
-    "queued": false,
-    "job": { "id": 43, "status": "done" },
-    "output": {
-      "results": [
-        {
-          "account_id": 7,
-          "identifier": "demo-user-01",
-          "status": "success",
-          "result": { "event": "registered" }
-        }
-      ]
-    }
-  }
-}
-```
+### async 返回
 
----
+通常包含：
 
-## Webhook Key 与 Trigger Token 的区别
+- `endpoint`
+- `mode`
+- `queued=true`
+- `input`
+- `job`
 
-| | Webhook Key | Trigger Token |
-| --- | --- | --- |
-| 创建位置 | API Keys 页面 | 创建 Trigger 时自动生成 |
-| 请求头 | `X-Api-Key` | `Authorization: Bearer` |
-| 范围控制 | 可限制到单个 slug，也可允许所有 | 只能用于创建它的那个 Trigger |
-| 可管理 | 可以禁用、删除 | 无法查看原文，只能删除 Trigger |
+### sync 返回
 
----
+通常包含：
 
-## Trigger 管理
+- `endpoint`
+- `mode`
+- `queued=false`
+- `input`
+- `job`
+- `output`
 
-| 操作 | 说明 |
-| --- | --- |
-| **启用 / 禁用** | 禁用后，对该 Trigger 的请求返回 403 |
-| **编辑** | 可修改 name、mode、default_selector、default_params、启用状态；slug 不可改 |
-| **删除** | 删除后该 slug 不再可用，Trigger Token 同时失效 |
+`output` 里会带：
 
----
+- `job_status`
+- `matched_accounts`
+- `processed_accounts`
+- `results`
 
-## 完整示例
-
-### 场景：合作方 A 每次有新用户注册，通过 Webhook 触发批量注册
-
-**1. 创建 Trigger**
+## 创建示例
 
 ```json
 {
-  "name": "合作方A注册",
-  "slug": "partner-a-register",
-  "type_key": "demo_shop",
+  "name": "GitHub Register",
+  "slug": "github-register",
+  "type_key": "github",
   "action_key": "REGISTER",
   "mode": "async",
-  "default_selector": { "identifier_contains": "partner-a", "limit": 50 },
-  "default_params": { "source": "partner-a" }
+  "default_selector": {
+    "identifier_contains": "seed-"
+  },
+  "default_params": {
+    "mode": "api"
+  }
 }
 ```
 
-**2. 保存 Trigger Token**（创建响应里的 `raw_token`）
+## 使用建议
 
-**3. 外部系统触发**
-
-```bash
-curl -X POST http://localhost:8080/webhooks/partner-a-register \
-  -H "Authorization: Bearer <trigger_token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "extra_params": { "invite_code": "PARTNER2024" }
-  }'
-```
-
-**4. 查询任务结果**
-
-```bash
-curl -H "X-Api-Key: <admin_key>" http://localhost:8080/api/v1/jobs/42
-```
+- 外部系统只需要触发时，优先发放 `webhook` Key，不要发 `admin` Key
+- 默认选择 `async`，把同步模式留给少量、低延迟动作
+- 把通用参数沉到 `default_params`，让调用方只传差异字段
+- 让模块消费 `_trigger` 元数据，便于追踪来源
