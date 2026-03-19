@@ -1,0 +1,322 @@
+<script setup lang="ts">
+import { ref, computed } from "vue";
+import { useRouter } from "vue-router";
+import { IconApps, IconSync, IconEye, IconRefresh } from "@/lib/icons";
+
+import { PageHeader, SmartListBar } from "@/components/index";
+import { usePlugins, useSyncPlugins } from "@/composables/usePlugins";
+import { useMessage, useErrorHandler } from "@/composables";
+import { to } from "@/router/registry";
+
+const router = useRouter();
+const message = useMessage();
+const { withErrorHandler } = useErrorHandler();
+
+const { data: plugins, loading, refresh } = usePlugins();
+const sync = useSyncPlugins();
+
+// 筛选
+const healthFilter = ref<string>();
+const searchKeyword = ref("");
+
+// 同步结果
+const syncResult = ref<{ synced: number; failed: number; errors: string[] } | null>(null);
+
+// 过滤插件
+const filteredPlugins = computed(() => {
+  let result = plugins.value;
+
+  // 按健康状态筛选
+  if (healthFilter.value === "healthy") {
+    result = result.filter(item => item.healthy);
+  } else if (healthFilter.value === "unhealthy") {
+    result = result.filter(item => !item.healthy);
+  }
+
+  // 搜索过滤
+  if (searchKeyword.value) {
+    const keyword = searchKeyword.value.toLowerCase();
+    result = result.filter(item =>
+      item.manifest.key.toLowerCase().includes(keyword) ||
+      item.manifest.name.toLowerCase().includes(keyword)
+    );
+  }
+
+  return result;
+});
+
+// 同步插件
+async function handleSync() {
+  syncResult.value = null;
+
+  await withErrorHandler(
+    async () => {
+      const result = await sync.execute();
+      syncResult.value = result;
+      await refresh();
+
+      if (result.failed === 0) {
+        message.success(`同步完成，已更新 ${result.synced} 个账号类型`);
+      } else {
+        message.warning(`同步部分失败：成功 ${result.synced}，失败 ${result.failed}`);
+      }
+    },
+    { action: "同步插件" }
+  );
+}
+
+// 查看详情
+function viewDetail(plugin: any) {
+  router.push(to.plugins.detail(plugin.manifest.key));
+}
+
+// 批量操作
+async function handleBatchExport(items: any[]) {
+  const data = JSON.stringify(items, null, 2);
+  const blob = new Blob([data], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `plugins-${Date.now()}.json`;
+  link.click();
+  URL.revokeObjectURL(url);
+  message.success(`已导出 ${items.length} 个插件`);
+}
+
+// 关闭同步结果
+function closeSyncResult() {
+  syncResult.value = null;
+}
+</script>
+
+<template>
+  <div class="page-container plugins-list-page">
+    <PageHeader
+      title="插件管理"
+      subtitle="查看和管理已加载的系统插件"
+      icon-bg="linear-gradient(135deg, rgba(236,72,153,0.12), rgba(219,39,119,0.12))"
+      icon-color="var(--icon-pink)"
+    >
+      <template #icon><icon-apps /></template>
+      <template #actions>
+        <ui-button type="primary" :loading="sync.loading.value" @click="handleSync">
+          <template #icon><icon-sync /></template>
+          同步插件
+        </ui-button>
+      </template>
+    </PageHeader>
+
+    <!-- 同步结果横幅 -->
+    <div
+      v-if="syncResult"
+      class="sync-banner"
+      :class="syncResult.failed ? 'sync-banner--warn' : 'sync-banner--ok'"
+    >
+      <div class="banner-summary">
+        <icon-check-circle v-if="!syncResult.failed" class="banner-icon banner-icon--ok" />
+        <icon-exclamation-circle v-else class="banner-icon banner-icon--warn" />
+        <span>
+          同步完成：<strong>{{ syncResult.synced }}</strong> 个成功
+          <template v-if="syncResult.failed">，<strong>{{ syncResult.failed }}</strong> 个失败</template>
+        </span>
+        <ui-button size="mini" type="text" @click="closeSyncResult">
+          <template #icon><icon-close /></template>
+        </ui-button>
+      </div>
+      <ul v-if="syncResult.errors.length" class="banner-errors">
+        <li v-for="(msg, i) in syncResult.errors" :key="i">{{ msg }}</li>
+      </ul>
+    </div>
+
+    <!-- 智能工具栏 -->
+    <SmartListBar
+      :data="filteredPlugins"
+      :loading="loading"
+      v-model:search="searchKeyword"
+      @refresh="refresh"
+      @batch-export="handleBatchExport"
+    >
+      <template #filters>
+        <!-- 健康状态筛选 -->
+        <div class="filter-group">
+          <span class="filter-label">状态：</span>
+          <div class="filter-options">
+            <button type="button"
+              class="filter-option"
+              :class="{ 'filter-option--active': !healthFilter }"
+              @click="healthFilter = ''"
+            >
+              全部
+            </button>
+            <button type="button"
+              class="filter-option"
+              :class="{ 'filter-option--active': healthFilter === 'healthy' }"
+              @click="healthFilter = 'healthy'"
+            >
+              正常
+            </button>
+            <button type="button"
+              class="filter-option"
+              :class="{ 'filter-option--active': healthFilter === 'unhealthy' }"
+              @click="healthFilter = 'unhealthy'"
+            >
+              异常
+            </button>
+          </div>
+        </div>
+      </template>
+    </SmartListBar>
+
+    <!-- 数据表格 -->
+    <ui-card class="data-grid-card table-desktop-only">
+      <ui-table
+        class="premium-table"
+        :data="filteredPlugins"
+        :loading="loading"
+        :pagination="{
+          showTotal: true,
+          pageSizeOptions: [10, 20, 50],
+          defaultPageSize: 20,
+        }"
+        :bordered="false"
+        row-key="manifest.key"
+      >
+        <template #columns>
+          <!-- 插件 Key -->
+          <ui-table-column title="插件 Key" data-index="manifest.key">
+            <template #cell="{ record }">
+              <code class="plugin-key">@{{ record.manifest.key }}</code>
+            </template>
+          </ui-table-column>
+
+          <!-- 名称 -->
+          <ui-table-column title="名称" data-index="manifest.name">
+            <template #cell="{ record }">
+              <span class="plugin-name">{{ record.manifest.name }}</span>
+            </template>
+          </ui-table-column>
+
+          <!-- 版本 -->
+          <ui-table-column title="版本" data-index="manifest.version">
+            <template #cell="{ record }">
+              <code class="plugin-version">{{ record.manifest.version || 'Unmarked' }}</code>
+            </template>
+          </ui-table-column>
+
+          <!-- 操作数 -->
+          <ui-table-column title="可用操作">
+            <template #cell="{ record }">
+              <span class="action-count">{{ record.manifest.actions?.length || 0 }} 个</span>
+            </template>
+          </ui-table-column>
+
+          <!-- 状态 -->
+          <ui-table-column title="状态">
+            <template #cell="{ record }">
+              <span
+                class="status-badge"
+                :class="record.healthy ? 'status-badge--ok' : 'status-badge--error'"
+              >
+                <span
+                  class="status-dot"
+                  :class="record.healthy ? 'status-dot--ok' : 'status-dot--error'"
+                ></span>
+                {{ record.healthy ? '正常' : '异常' }}
+              </span>
+            </template>
+          </ui-table-column>
+
+          <!-- 快速操作 -->
+          <ui-table-column title="操作" :width="80" align="right">
+            <template #cell="{ record }">
+              <ui-button size="small" type="text" @click="viewDetail(record)">
+                <template #icon><icon-eye /></template>
+                查看详情
+              </ui-button>
+            </template>
+          </ui-table-column>
+        </template>
+
+        <!-- 空状态 -->
+        <template #empty>
+          <ui-empty description="暂无插件">
+            <p class="empty-hint">请将插件放入 plugins/modules 目录后重启服务，或点击「同步插件」</p>
+            <ui-button type="primary" @click="handleSync">
+              <template #icon><icon-sync /></template>
+              同步插件
+            </ui-button>
+          </ui-empty>
+        </template>
+      </ui-table>
+    </ui-card>
+
+    <div class="mobile-list">
+      <ui-card
+        v-for="record in filteredPlugins"
+        :key="record.manifest.key"
+        class="mobile-list-card"
+      >
+        <div class="mobile-list-header">
+          <div class="icon-box icon-pink">
+            <icon-apps />
+          </div>
+          <div class="mobile-list-title-group">
+            <div class="mobile-list-title">{{ record.manifest.name }}</div>
+            <div class="mobile-list-subtitle">
+              <code class="plugin-key">@{{ record.manifest.key }}</code>
+            </div>
+          </div>
+          <ui-button size="small" type="text" @click="viewDetail(record)">
+            <template #icon><icon-eye /></template>
+            查看
+          </ui-button>
+        </div>
+
+        <div class="mobile-list-meta">
+          <div class="mobile-list-meta-row">
+            <span class="mobile-list-label">版本</span>
+            <div class="mobile-list-value">
+              <code class="plugin-version">{{ record.manifest.version || 'Unmarked' }}</code>
+            </div>
+          </div>
+
+          <div class="mobile-list-meta-row">
+            <span class="mobile-list-label">操作数</span>
+            <div class="mobile-list-value">
+              <span class="action-count">{{ record.manifest.actions?.length || 0 }} 个</span>
+            </div>
+          </div>
+
+          <div class="mobile-list-meta-row">
+            <span class="mobile-list-label">状态</span>
+            <div class="mobile-list-value">
+              <span
+                class="status-badge"
+                :class="record.healthy ? 'status-badge--ok' : 'status-badge--error'"
+              >
+                <span
+                  class="status-dot"
+                  :class="record.healthy ? 'status-dot--ok' : 'status-dot--error'"
+                ></span>
+                {{ record.healthy ? '正常' : '异常' }}
+              </span>
+            </div>
+          </div>
+        </div>
+      </ui-card>
+
+      <ui-card
+        v-if="!loading && !filteredPlugins.length"
+        class="mobile-list-card mobile-list-empty-card"
+      >
+        <ui-empty description="暂无插件">
+          <p class="empty-hint">请将插件放入 plugins/modules 目录后重启服务，或点击「同步插件」</p>
+          <ui-button type="primary" @click="handleSync">
+            <template #icon><icon-sync /></template>
+            同步插件
+          </ui-button>
+        </ui-empty>
+      </ui-card>
+    </div>
+  </div>
+</template>

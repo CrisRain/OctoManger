@@ -1,0 +1,343 @@
+@use "./mixins" as *;
+
+@layer components {
+  .mail-preview-page {
+    @include tw("flex", "flex-col", "gap-6");
+  }
+
+  .mail-toolbar {
+    @include tw("flex", "flex-col", "gap-5", "rounded-2xl", "border", "border-slate-200/80", "bg-white/85", "px-6", "py-6");
+    box-shadow: 0 18px 36px rgba(15, 23, 42, 0.08);
+  }
+
+  .mail-toolbar-main {
+    @include tw("relative", "flex", "flex-col", "gap-1.5");
+    min-height: 56px;
+    padding-left: 72px;
+  }
+
+  .mail-toolbar-icon {
+    @include tw("absolute", "left-0", "top-0", "flex", "h-14", "w-14", "items-center", "justify-center", "rounded-2xl", "text-orange-600");
+    background: linear-gradient(135deg, rgba(234, 88, 12, 0.14) 0%, rgba(249, 115, 22, 0.18) 100%);
+  }
+
+  .mail-toolbar-eyebrow {
+    @include tw("text-xs", "font-semibold", "uppercase", "tracking-[0.14em]", "text-orange-600");
+  }
+
+  .mail-toolbar-title {
+    @include tw("text-[26px]", "font-bold", "leading-none", "text-slate-900");
+    font-family: theme("fontFamily.display");
+    letter-spacing: -0.03em;
+  }
+
+  .mail-toolbar-subtitle {
+    @include tw("text-sm", "text-slate-500");
+  }
+
+  .mail-toolbar-actions {
+    @include tw("flex", "flex-wrap", "items-center", "gap-2");
+  }
+
+  .mail-workspace {
+    @include tw("grid", "grid-cols-1", "gap-4");
+  }
+
+  .mail-pane {
+    @include tw("flex", "min-w-0", "flex-col", "overflow-hidden", "rounded-2xl", "border", "border-slate-200/80", "bg-white/85");
+    min-height: 540px;
+    box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
+  }
+
+  .pane-header {
+    @include tw("flex", "items-center", "gap-3", "border-b", "border-slate-200/80", "px-5", "py-4");
+  }
+
+  .pane-eyebrow {
+    @include tw("text-[11px]", "font-semibold", "uppercase", "tracking-[0.16em]", "text-teal-600");
+  }
+
+  .pane-title {
+    @include tw("flex-1", "text-sm", "font-semibold", "text-slate-900");
+  }
+
+  .pane-count {
+    @include tw("inline-flex", "items-center", "rounded-full", "bg-slate-100", "px-2.5", "py-1", "text-xs", "font-semibold", "text-slate-600");
+  }
+
+  .pane-toolbar {
+    @include tw("flex", "items-center", "gap-2", "border-b", "border-slate-100", "px-4", "py-3");
+  }
+
+  .pane-body {
+    @include tw("flex-1", "overflow-y-auto", "p-3");
+  }
+
+  .folder-list,
+  .message-list {
+    @include tw("flex", "flex-col", "gap-2");
+  }
+
+  .pane-empty {
+    @include tw("flex", "min-h-[160px]", "flex-col", "items-center", "justify-center", "gap-3", "rounded-2xl", "border", "border-dashed", "border-slate-200", "bg-slate-50/80", "px-6", "py-8", "text-center", "text-sm", "text-slate-500");
+  }
+
+  .pane-empty--error {
+    @include tw("border-red-200", "bg-red-50/70", "text-red-700");
+  }
+
+  .folder-item {
+    @include tw("flex", "flex-col", "gap-1", "rounded-2xl", "border", "border-transparent", "bg-slate-50/85", "p-3.5", "text-left");
+    @include interactive-transition(background-color, border-color, box-shadow, transform);
+    @include focus-ring;
+  }
+
+  .message-row {
+    @include tw("rounded-2xl", "border", "border-transparent", "bg-slate-50/85", "p-3.5", "text-left");
+    @include interactive-transition(background-color, border-color, box-shadow, transform);
+    @include focus-ring;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "indicator from date"
+      "indicator subject subject"
+      "indicator meta meta";
+    column-gap: 12px;
+    row-gap: 4px;
+    align-items: start;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .folder-item:hover,
+    .message-row:hover {
+      @include tw("border-slate-200", "bg-white");
+      transform: translate3d(0, -1px, 0);
+    }
+  }
+
+  .folder-item--active,
+  .message-row--active {
+    @include tw("border-teal-200", "bg-teal-50/60");
+    box-shadow: 0 8px 18px rgba(20, 184, 166, 0.08);
+  }
+
+  .folder-item-icon {
+    @include tw("mb-1", "flex", "h-9", "w-9", "items-center", "justify-center", "rounded-xl", "border", "border-slate-200", "bg-white", "text-slate-500");
+    box-shadow: 0 4px 10px rgba(15, 23, 42, 0.05);
+  }
+
+  .folder-item-name {
+    @include tw("text-sm", "font-semibold", "text-slate-900");
+  }
+
+  .folder-item-meta {
+    @include tw("text-xs", "text-slate-500");
+  }
+
+  .message-summary-bar {
+    @include tw("flex", "items-center", "justify-between", "gap-3", "border-b", "border-slate-100", "px-5", "py-3", "text-xs", "text-slate-500");
+  }
+
+  .message-row-indicator {
+    @include tw("mt-1", "h-2.5", "w-2.5", "rounded-full", "bg-slate-200");
+    grid-area: indicator;
+  }
+
+  .message-row--unread .message-row-indicator {
+    @include tw("bg-teal-500");
+  }
+
+  .message-row-from {
+    @include tw("text-sm", "font-semibold", "text-slate-900");
+    grid-area: from;
+  }
+
+  .message-row-date {
+    @include tw("justify-self-end", "text-xs", "text-slate-400");
+    grid-area: date;
+  }
+
+  .message-row-subject {
+    @include tw("text-sm", "text-slate-700");
+    grid-area: subject;
+  }
+
+  .message-row-meta {
+    @include tw("flex", "items-center", "justify-between", "gap-3", "text-xs", "text-slate-500");
+    grid-area: meta;
+  }
+
+  .message-row-to {
+    @include tw("truncate");
+  }
+
+  .reader-header {
+    @include tw("border-b", "border-slate-200/80", "bg-white/80", "px-6", "py-5");
+  }
+
+  .reader-header--empty {
+    @include tw("flex", "flex-1", "items-center", "justify-center", "border-b-0", "bg-transparent", "p-0");
+  }
+
+  .reader-empty {
+    @include tw("h-full", "border-0", "bg-transparent");
+  }
+
+  .reader-eyebrow-row {
+    @include tw("flex", "items-center", "justify-between", "gap-3");
+  }
+
+  .reader-mailbox-pill {
+    @include tw("inline-flex", "items-center", "gap-1.5", "rounded-full", "border", "border-slate-200", "bg-white", "px-3", "py-1", "text-xs", "font-semibold", "text-slate-600");
+  }
+
+  .reader-date {
+    @include tw("text-xs", "font-mono", "text-slate-500");
+  }
+
+  .reader-subject {
+    @include tw("mt-3", "text-2xl", "font-bold", "text-slate-900");
+    font-family: theme("fontFamily.display");
+    letter-spacing: -0.03em;
+  }
+
+  .reader-meta-grid {
+    @include tw("mt-4", "grid", "grid-cols-1", "gap-3", "sm:grid-cols-2");
+  }
+
+  .reader-meta-card {
+    @include tw("rounded-xl", "border", "border-slate-200", "bg-slate-50/80", "p-3");
+  }
+
+  .reader-meta-label {
+    @include tw("text-xs", "font-semibold", "uppercase", "tracking-[0.08em]", "text-slate-500");
+  }
+
+  .reader-meta-value {
+    @include tw("mt-1", "block", "break-all", "text-sm", "text-slate-900");
+  }
+
+  .reader-flags {
+    @include tw("mt-4", "flex", "flex-wrap", "gap-2");
+  }
+
+  .reader-flag {
+    @include tw("bg-white");
+  }
+
+  .reader-tabs {
+    @include tw("flex", "flex-1", "flex-col");
+  }
+
+  .reader-tabs .ui-tabs-content {
+    @include tw("flex-1");
+  }
+
+  .reader-tabs .ui-tabs-content-list,
+  .reader-tab-panel {
+    height: 100%;
+  }
+
+  .reader-tab-panel {
+    @include tw("p-5");
+  }
+
+  .reader-paper {
+    @include tw("rounded-2xl", "border", "border-slate-200", "bg-white", "p-5");
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
+  }
+
+  .reader-paper-content,
+  .code-view {
+    @include tw("m-0", "whitespace-pre-wrap", "break-words", "leading-7");
+  }
+
+  .reader-paper-content {
+    @include tw("text-sm", "text-slate-700");
+  }
+
+  .code-view {
+    @include tw("rounded-2xl", "border", "border-slate-200", "p-4", "text-xs", "text-slate-100");
+    background: rgba(2, 6, 23, 0.96);
+    font-family: theme("fontFamily.mono");
+  }
+
+  .headers-list {
+    @include tw("overflow-hidden", "rounded-2xl", "border", "border-slate-200", "bg-white");
+  }
+
+  .header-row {
+    @include tw("grid", "gap-4", "border-b", "border-slate-100", "px-4", "py-3");
+    grid-template-columns: 180px minmax(0, 1fr);
+  }
+
+  .header-row:last-child {
+    @include tw("border-b-0");
+  }
+
+  .header-key {
+    @include tw("text-xs", "font-semibold", "uppercase", "tracking-[0.08em]", "text-slate-500");
+  }
+
+  .header-value {
+    @include tw("break-all", "text-xs", "text-slate-800");
+    font-family: theme("fontFamily.mono");
+  }
+
+  .preview-output-card {
+    @include tw("rounded-2xl", "border", "border-slate-200", "bg-white", "p-4");
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
+  }
+
+  .preview-output-head {
+    @include tw("mb-4", "flex", "items-start", "justify-between", "gap-3");
+  }
+
+  .preview-output-title {
+    @include tw("text-sm", "font-semibold", "text-slate-900");
+  }
+
+  .preview-output-time {
+    @include tw("text-xs", "text-slate-500");
+  }
+
+  .standalone-page-shell {
+    @include tw("min-h-screen");
+  }
+
+  .oauth-page {
+    max-width: 760px;
+  }
+
+  @media (min-width: 1024px) {
+    .mail-toolbar {
+      @include tw("flex-row", "items-end", "justify-between");
+    }
+
+    .mail-workspace {
+      grid-template-columns: 280px minmax(0, 340px) minmax(0, 1fr);
+    }
+  }
+
+  @media (max-width: 767px) {
+    .message-summary-bar,
+    .reader-eyebrow-row,
+    .header-row {
+      @include tw("grid");
+      grid-template-columns: 1fr;
+    }
+
+    .message-row {
+      grid-template-columns: auto minmax(0, 1fr);
+      grid-template-areas:
+        "indicator from"
+        "indicator subject"
+        "indicator meta"
+        "indicator date";
+    }
+
+    .message-row-date {
+      justify-self: start;
+    }
+  }
+}

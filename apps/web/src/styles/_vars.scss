@@ -1,0 +1,24 @@
+$motion-safe-hover: "(hover: hover) and (pointer: fine)";
+
+$quick-action-themes: (
+  "blue": (
+    "background": rgba(239, 246, 255, 0.86),
+    "border": rgba(147, 197, 253, 0.72),
+    "icon": #2563eb,
+  ),
+  "orange": (
+    "background": rgba(255, 247, 237, 0.86),
+    "border": rgba(253, 186, 116, 0.72),
+    "icon": #ea580c,
+  ),
+  "teal": (
+    "background": rgba(240, 253, 250, 0.88),
+    "border": rgba(153, 246, 228, 0.76),
+    "icon": #0f766e,
+  ),
+  "cyan": (
+    "background": rgba(236, 254, 255, 0.88),
+    "border": rgba(165, 243, 252, 0.76),
+    "icon": #0891b2,
+  ),
+);

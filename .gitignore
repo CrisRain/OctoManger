@@ -2,8 +2,6 @@
 # Go
 # ============================================================
 
-*_test.go
-
 # 编译产物
 bin/
 *.exe
@@ -26,7 +24,6 @@ coverage.out
 vendor/
 
 # 构建缓存
-backend/.gocache
 .gocache/
 
 # ============================================================
@@ -60,16 +57,17 @@ pip-wheel-metadata/
 *.test.js
 # 依赖
 node_modules/
-web/node_modules/
+apps/web/node_modules/
 
 # 构建产物
-web/dist/
+apps/web/dist/
 
 # TypeScript 编译中间产物
-web/*.tsbuildinfo
-web/vite.config.js
-web/vite.config.d.ts
-web/tailwind.config.d.ts
+apps/web/*.tsbuildinfo
+
+# 自动生成的类型声明文件
+apps/web/*.d.ts
+apps/web/src/*.d.ts
 
 # ============================================================
 # 配置 / 环境变量

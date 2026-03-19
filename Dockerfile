@@ -1,23 +1,25 @@
 FROM oven/bun:1 AS web-builder
 WORKDIR /src/web
 
-COPY web/package.json ./
-COPY web/bun.lock* ./
+COPY apps/web/package.json ./
+COPY apps/web/bun.lock* ./
 RUN if [ -f bun.lock ] || [ -f bun.lockb ]; then bun install --frozen-lockfile; else bun install; fi
 
-COPY web/. .
+COPY apps/web/. .
+COPY contracts/ ../contracts/
 RUN bun run build
 
 FROM golang:1.26-alpine AS backend-builder
-WORKDIR /src/backend
+WORKDIR /src
 
-COPY backend/go.mod ./
-COPY backend/go.sum ./
+COPY go.mod go.sum ./
 RUN go mod download
 
-COPY backend/. .
+COPY . .
 RUN go mod tidy
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/octomanger ./cmd/octomanger
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/api ./apps/api
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/worker ./apps/worker
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/migrate ./apps/migrate
 
 FROM debian:bookworm-slim
 
@@ -68,12 +70,13 @@ RUN apt-get update \
 WORKDIR /app
 
 COPY --from=web-builder /src/web/dist /app/web-dist
-COPY --from=backend-builder /out/octomanger /app/octomanger
+COPY --from=backend-builder /out/api /app/api
+COPY --from=backend-builder /out/worker /app/worker
+COPY --from=backend-builder /out/migrate /app/migrate
 COPY scripts/python /app/scripts/python
-COPY scripts/python/modules /app/scripts/python-modules-seed
 COPY docker/start-all-in-one.sh /app/start.sh
 
-RUN chmod +x /app/octomanger /app/start.sh
+RUN chmod +x /app/api /app/worker /app/migrate /app/start.sh
 
 EXPOSE 8080
 

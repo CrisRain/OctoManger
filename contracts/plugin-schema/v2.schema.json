@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://octomanger.dev/contracts/plugin-schema/v2.schema.json",
+  "title": "OctoManger Plugin Protocol v2",
+  "type": "object",
+  "properties": {
+    "mode": {
+      "type": "string",
+      "enum": ["job", "agent"]
+    },
+    "action": {
+      "type": "string"
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "required": ["mode", "action"],
+  "$defs": {
+    "event": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["log", "progress", "result", "error"]
+        },
+        "message": {
+          "type": "string"
+        },
+        "progress": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "data": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "required": ["type"]
+    }
+  }
+}
