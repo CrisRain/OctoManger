@@ -63,11 +63,11 @@ async function refreshStatus() {
 </script>
 
 <template>
-  <div class="page-container settings-page">
+  <div class="page-shell flex flex-col gap-6">
     <PageHeader
       title="设置"
       subtitle="查看系统运行状态，管理配置、认证与访问安全"
-      icon-bg="linear-gradient(135deg, rgba(20,184,166,0.16), rgba(45,212,191,0.16))"
+      icon-bg="linear-gradient(135deg, rgba(10,132,255,0.12), rgba(10,132,255,0.06))"
       icon-color="var(--accent)"
     >
       <template #icon><icon-settings /></template>
@@ -80,63 +80,63 @@ async function refreshStatus() {
     </PageHeader>
 
     <!-- 顶部卡片网格 -->
-    <div class="top-grid">
+    <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
       <!-- 系统状态 -->
-      <ui-card class="status-card">
+      <ui-card class="min-w-0">
         <template #title>
-          <div class="card-title-row">
-            <icon-cloud class="card-title-icon card-title-icon--blue" />
+          <div class="flex items-center gap-2">
+            <icon-cloud class="h-5 w-5 text-sky-600" />
             <span>系统状态</span>
           </div>
         </template>
 
-        <div class="info-rows">
-          <div class="info-row">
-            <span class="detail-label">数据库连接</span>
-            <div class="status-value">
+        <div class="flex flex-col">
+          <div class="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0 max-md:flex-col max-md:items-start">
+            <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">数据库连接</span>
+            <div class="flex items-center gap-2">
               <span
-                class="status-dot"
-                :class="statusData?.database_ok ? 'status-dot--ok' : 'status-dot--error'"
-              ></span>
+                class="inline-block h-2 w-2 flex-shrink-0 rounded-full transition-colors"
+                :class="statusData?.database_ok ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'"
+              />
               <span
-                class="status-text"
-                :class="statusData?.database_ok ? 'status-text--ok' : 'status-text--error'"
+                class="text-sm font-semibold"
+                :class="statusData?.database_ok ? 'text-emerald-700' : 'text-red-700'"
               >
                 {{ statusData?.database_ok ? "正常" : "异常" }}
               </span>
             </div>
           </div>
-          <div class="info-row">
-            <span class="detail-label">已加载插件数</span>
-            <span class="detail-value">{{ statusData?.plugin_count ?? "—" }}</span>
+          <div class="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0 max-md:flex-col max-md:items-start">
+            <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">已加载插件数</span>
+            <span class="text-sm font-medium text-slate-900">{{ statusData?.plugin_count ?? "—" }}</span>
           </div>
-          <div v-if="statusData?.now" class="info-row">
-            <span class="detail-label">服务器时间</span>
-            <span class="detail-value mono-text">{{ new Date(statusData.now).toLocaleString("zh-CN") }}</span>
+          <div v-if="statusData?.now" class="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0 max-md:flex-col max-md:items-start">
+            <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">服务器时间</span>
+            <span class="text-sm font-medium text-slate-900 font-mono">{{ new Date(statusData.now).toLocaleString("zh-CN") }}</span>
           </div>
         </div>
       </ui-card>
 
       <!-- 管理员密钥设置 -->
-      <ui-card class="status-card">
+      <ui-card class="min-w-0">
         <template #title>
-          <div class="card-title-row">
-            <icon-lock class="card-title-icon card-title-icon--purple" />
+          <div class="flex items-center gap-2">
+            <icon-lock class="h-5 w-5 text-[var(--accent)]" />
             <span>管理员密钥设置</span>
           </div>
         </template>
 
-        <div class="info-rows">
-          <div class="info-row info-row--no-border">
-            <span class="detail-label">浏览器中的 Admin Key</span>
-            <div class="status-value">
+        <div class="flex flex-col">
+          <div class="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0 max-md:flex-col max-md:items-start border-b-0 pb-0">
+            <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">浏览器中的 Admin Key</span>
+            <div class="flex items-center gap-2">
               <span
-                class="status-dot"
-                :class="adminKeySet ? 'status-dot--ok' : 'status-dot--error'"
-              ></span>
+                class="inline-block h-2 w-2 flex-shrink-0 rounded-full transition-colors"
+                :class="adminKeySet ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'"
+              />
               <span
-                class="status-text"
-                :class="adminKeySet ? 'status-text--ok' : 'status-text--error'"
+                class="text-sm font-semibold"
+                :class="adminKeySet ? 'text-emerald-700' : 'text-red-700'"
               >
                 {{ adminKeySet ? "已配置" : "未配置" }}
               </span>
@@ -144,76 +144,78 @@ async function refreshStatus() {
           </div>
         </div>
 
-        <div class="admin-input-block">
+        <div class="mt-4 rounded-xl border p-4 border-slate-200 bg-white/[56%] shadow-sm">
           <ui-input
             :model-value="adminKey"
             placeholder="输入 Admin Key..."
             allow-clear
             type="password"
-            class="admin-input"
+            class="w-full"
             @input="persistAdminKey($event)"
           />
-          <p class="admin-input-caption">
+          <p class="text-sm leading-6 text-slate-500">
             保存于当前浏览器，填写后会自动在所有请求里附带 <code>X-Admin-Key</code>。
           </p>
         </div>
 
-        <div class="auth-hint">
+        <div class="text-sm leading-6 text-slate-500 mt-4 flex flex-col gap-1.5 rounded-xl border p-4 border-slate-200 bg-slate-50 shadow-sm">
           <p>您的 Admin Key 已保存在本地浏览器中。</p>
           <p>该值由服务器端的环境变量 <code>ADMIN_KEY</code> 控制。</p>
         </div>
       </ui-card>
     </div>
 
-    <div class="security-grid">
-      <ui-card class="security-card">
+    <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <ui-card class="min-w-0">
         <template #title>
-          <div class="card-header-with-icon">
-            <div class="card-icon-box dark"><icon-safe /></div>
+          <div class="flex items-center gap-2">
+            <div class="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-xl text-[var(--accent)] bg-[var(--accent)]/10"><icon-safe /></div>
             API 密钥管理
           </div>
         </template>
 
-        <div class="info-section">
-          <p class="info-text">
+        <div class="flex flex-col gap-4">
+          <p class="text-sm leading-6 text-slate-500">
             当前版本使用单个 <strong>Admin Key</strong> 作为 API 访问凭证，服务端通过
-            <code class="key-badge highlight-key">ADMIN_KEY</code> 进行配置。
+            <code class="inline-flex items-center rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-xs font-mono text-slate-600">ADMIN_KEY</code> 进行配置。
           </p>
-          <p class="info-text">
+          <p class="text-sm leading-6 text-slate-500">
             目前不提供多 API Key 的签发、轮换或撤销列表页面，统一通过管理员密钥进行认证。
           </p>
 
-          <div class="terminal-block">
-            <div class="terminal-header">
-              <div class="mac-dots">
-                <span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
+          <div class="overflow-hidden rounded-xl border border-slate-800 bg-slate-900 shadow-sm">
+            <div class="flex items-center justify-between gap-3 border-b border-slate-800 px-4 py-2.5">
+              <div class="flex items-center gap-1.5">
+                <span class="h-2.5 w-2.5 rounded-full bg-red-400"></span>
+                <span class="h-2.5 w-2.5 rounded-full bg-amber-400"></span>
+                <span class="h-2.5 w-2.5 rounded-full bg-emerald-400"></span>
               </div>
-              <span class="terminal-title">HTTP Request Header Structure</span>
+              <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">HTTP Request Header</span>
             </div>
-            <div class="terminal-body">
-              <code><span class="http-key">X-Admin-Key</span>: <span class="http-val">&lt;your-admin-key&gt;</span></code>
+            <div class="px-4 py-4 font-mono text-sm">
+              <code><span class="text-[var(--accent)]/80">X-Admin-Key</span><span class="text-slate-500">: </span><span class="text-slate-200">&lt;your-admin-key&gt;</span></code>
             </div>
           </div>
 
-          <p class="info-text tip">
-            <icon-info-circle class="inline-info-icon" />
+          <p class="text-sm leading-6 text-slate-500 flex items-start gap-2">
+            <icon-info-circle class="mt-0.5 flex-shrink-0 text-sky-500" />
             <strong>提示：</strong>在本页填写管理员密钥后，浏览器会自动在请求中携带认证信息。
           </p>
         </div>
       </ui-card>
 
-      <ui-card class="security-card">
+      <ui-card class="min-w-0">
         <template #title>
-          <div class="card-header-with-icon">
-            <div class="card-icon-box dark"><icon-lock /></div>
+          <div class="flex items-center gap-2">
+            <div class="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-xl text-[var(--accent)] bg-[var(--accent)]/10"><icon-lock /></div>
             SSL 安全证书管理
           </div>
         </template>
 
-        <div class="notice notice--info">
-          <icon-info-circle class="notice-icon" />
-          <p class="notice-title">通过服务器配置管理 TLS</p>
-          <p class="notice-body">
+        <div class="rounded-xl border p-5 shadow-sm border-sky-200 bg-sky-50/70">
+          <icon-info-circle class="mb-2 text-sky-600" />
+          <p class="text-sm font-semibold text-slate-900">通过服务器配置管理 TLS</p>
+          <p class="mt-1 text-sm leading-6 text-slate-600">
             当前版本的 SSL 证书管理通过服务器配置完成，不提供 Web 界面操作。
             请在服务器配置文件或反向代理（如 Nginx、Caddy）中配置 TLS 证书。
           </p>
@@ -222,35 +224,35 @@ async function refreshStatus() {
     </div>
 
     <!-- 系统配置 -->
-    <ui-card class="config-card">
+    <ui-card class="min-w-0">
       <template #title>
-        <div class="card-title-row">
-          <icon-tool class="card-title-icon card-title-icon--gray" />
+        <div class="flex items-center gap-2">
+          <icon-tool class="h-5 w-5 text-[var(--accent)] text-slate-500" />
           <span>系统配置</span>
         </div>
       </template>
 
       <template #extra>
-        <span class="extra-hint">配置值以 JSON 格式存储</span>
+        <span class="text-sm leading-6 text-slate-500">配置值以 JSON 格式存储</span>
       </template>
 
-      <div class="config-list">
-        <div v-for="c in knownConfigs" :key="c.key" class="config-item">
-          <div class="config-label-row">
-            <span class="config-label">{{ c.label }}</span>
-            <code class="key-badge">{{ c.key }}</code>
+      <div class="flex flex-col gap-4">
+        <div v-for="c in knownConfigs" :key="c.key" class="flex items-start gap-3 rounded-xl border p-4 border-slate-200 bg-slate-50 shadow-sm flex-col">
+          <div class="flex items-center justify-between gap-3 max-md:grid max-md:grid-cols-[1fr]">
+            <span class="text-sm font-semibold text-slate-900">{{ c.label }}</span>
+            <code class="inline-flex items-center rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-xs font-mono text-slate-600">{{ c.key }}</code>
           </div>
-          <p class="config-description">{{ c.description }}</p>
-          <div class="config-input-row">
+          <p class="text-sm text-slate-500">{{ c.description }}</p>
+          <div class="flex flex-col gap-3 [@media(min-width:768px)]:grid [@media(min-width:768px)]:gap-3 [@media(min-width:768px)]:grid-cols-[minmax(0,_1fr)_auto]">
             <ui-input
               :model-value="configEdits[c.key] ?? ''"
               placeholder='例如: "OctoManger" 或 30'
-              class="config-input"
+              class="w-full"
               @input="configEdits[c.key] = $event"
             />
             <ui-button
               type="primary"
-              class="save-btn"
+              class="self-start max-md:w-full max-md:justify-center"
               :disabled="configSaving[c.key] || configEdits[c.key] === configs[c.key]"
               :loading="configSaving[c.key]"
               @click="handleSaveConfig(c.key)"

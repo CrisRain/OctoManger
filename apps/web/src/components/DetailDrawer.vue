@@ -16,7 +16,6 @@ interface DrawerTab {
 interface Props {
   open: boolean;
   title?: string;
-  width?: number | string;
   loading?: boolean;
   showActions?: boolean;
   tabs?: DrawerTab[];
@@ -25,7 +24,6 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   open: false,
-  width: 640,
   loading: false,
   showActions: true,
 });
@@ -99,7 +97,6 @@ function handleRefresh() {
 <template>
   <ui-drawer
     :visible="innerOpen"
-    :width="width"
     :footer="false"
     :header="false"
     :closable="false"
@@ -108,49 +105,49 @@ function handleRefresh() {
     @cancel="handleClose"
   >
     <!-- Header -->
-    <div class="drawer-header">
-      <div class="header-left">
-        <button type="button" class="icon-btn icon-btn--ghost" @click="handleClose">
+    <div class="flex flex-shrink-0 items-center justify-between border-b border-slate-200 bg-slate-50 px-6 py-5">
+      <div class="flex min-w-0 flex-1 items-center gap-2.5">
+        <button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition-all hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/20" @click="handleClose">
           <icon-close />
         </button>
-        <div class="header-title">
-          <h2>{{ title || "详情" }}</h2>
-          <p v-if="$slots.subtitle" class="header-subtitle">
+        <div class="flex flex-col gap-0.5">
+          <h2 class="m-0 text-[18px] font-semibold tracking-[-0.03em] text-slate-900">{{ title || "详情" }}</h2>
+          <p v-if="$slots.subtitle" class="text-xs text-slate-500">
             <slot name="subtitle" />
           </p>
         </div>
       </div>
 
-      <div v-if="showActions" class="header-actions">
-        <button type="button" class="icon-btn" @click="handleRefresh" :disabled="loading">
+      <div v-if="showActions" class="flex flex-shrink-0 flex-wrap items-center justify-end gap-2.5 max-md:w-full max-md:justify-start">
+        <button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition-all hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/20" @click="handleRefresh" :disabled="loading">
           <icon-refresh />
         </button>
-        <button type="button" class="icon-btn" @click="handleEdit">
+        <button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition-all hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/20" @click="handleEdit">
           <icon-edit />
         </button>
-        <button type="button" class="icon-btn icon-btn--danger" @click="handleDelete">
+        <button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition-all hover:bg-red-50 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/20" @click="handleDelete">
           <icon-delete />
         </button>
       </div>
     </div>
 
     <!-- Tabs -->
-    <div v-if="resolvedTabs.length" class="drawer-tabs">
+    <div v-if="resolvedTabs.length" class="flex flex-shrink-0 items-center gap-1 border-b border-slate-200 px-4 py-2 bg-slate-50/50">
       <button type="button"
         v-for="tab in resolvedTabs"
         :key="tab.key"
-        class="drawer-tab"
-        :class="{ 'drawer-tab--active': currentTab === tab.key }"
+        class="flex cursor-pointer items-center gap-1.5 rounded-lg border border-transparent bg-transparent px-4 py-2 text-[14px] font-medium text-slate-500 transition-all hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/20"
+        :class="{ 'bg-white shadow-sm border-slate-200 text-[var(--accent)] font-semibold': currentTab === tab.key }"
         @click="setTab(tab.key)"
       >
-        <component v-if="tab.icon" :is="tab.icon" class="drawer-tab-icon" />
+        <component v-if="tab.icon" :is="tab.icon" class="h-3.5 w-3.5" />
         {{ tab.label }}
       </button>
     </div>
 
     <!-- Body -->
-    <div class="drawer-body">
-      <ui-spin v-if="loading" :loading="true" tip="加载中..." class="drawer-loading" />
+    <div class="flex-1 overflow-y-auto p-6">
+      <ui-spin v-if="loading" :loading="true" tip="加载中..." class="flex items-center justify-center py-12" />
 
       <div
         v-for="tab in resolvedTabs"
@@ -167,13 +164,13 @@ function handleRefresh() {
             v-else-if="tab.key === 'settings'"
             description="暂无可设置项"
           />
-          <div v-else class="drawer-panel-empty">暂无内容</div>
+          <div v-else class="py-8 text-center text-sm text-slate-500">暂无内容</div>
         </slot>
       </div>
     </div>
 
     <!-- Footer -->
-    <div v-if="$slots.footer" class="drawer-footer">
+    <div v-if="$slots.footer" class="flex flex-shrink-0 items-center justify-end gap-2 border-t border-slate-200 bg-white/[58%] px-5 py-4">
       <slot name="footer" />
     </div>
   </ui-drawer>

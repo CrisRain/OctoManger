@@ -166,67 +166,56 @@ defineExpose({
 </script>
 
 <template>
-  <div class="smart-list-bar">
+  <div class="mb-5">
     <!-- 搜索和操作栏 -->
-    <div class="list-toolbar">
+    <div class="panel-surface flex items-center gap-2 px-3 py-2.5">
       <!-- 搜索框 -->
-      <div class="search-box">
-        <icon-search class="search-icon" />
-        <input
-          v-model="searchKeyword"
-          type="text"
-          placeholder="搜索..."
-          class="search-input"
-          data-search-trigger
-        />
-        <button type="button"
-          v-if="searchKeyword"
-          class="search-clear"
-          @click="searchKeyword = ''"
-        >
-          <icon-close />
-        </button>
-      </div>
+      <icon-search class="h-4 w-4 flex-shrink-0 text-slate-400" />
+      <input
+        v-model="searchKeyword"
+        type="text"
+        placeholder="搜索..."
+        class="min-w-0 flex-1 bg-transparent text-[14px] text-slate-800 placeholder:text-slate-400 outline-none"
+        data-search-trigger
+      />
+      <button type="button"
+        v-if="searchKeyword"
+        class="inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+        @click="searchKeyword = ''"
+      >
+        <icon-close class="h-3 w-3" />
+      </button>
+
+      <div class="mx-1 h-5 w-px bg-slate-200 flex-shrink-0" />
 
       <!-- 操作按钮组 -->
-      <div class="toolbar-actions">
+      <div class="flex flex-shrink-0 items-center gap-1">
         <!-- 选中时的批量操作 -->
         <template v-if="selectedKeys.length > 0">
-          <div class="selection-info">
-            <span class="selection-count">{{ selectedKeys.length }}</span>
-            <span class="selection-text">已选中</span>
-            <button type="button" class="selection-clear" @click="clearSelection">
-              清空
-            </button>
-          </div>
-
-          <div class="toolbar-divider" />
-
-          <button type="button" class="toolbar-btn" @click="handleBatchExport">
-            <icon-download />
-            <span>导出</span>
+          <span class="mr-1 text-xs font-medium text-slate-600">{{ selectedKeys.length }} 已选</span>
+          <button type="button" class="rounded-md px-2 py-1 text-xs text-slate-500 hover:text-slate-900 transition-colors" @click="clearSelection">清空</button>
+          <div class="h-4 w-px bg-slate-200 mx-0.5" />
+          <button type="button" class="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-slate-500 transition-all hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/20" title="导出" @click="handleBatchExport">
+            <icon-download class="h-4 w-4" />
           </button>
-
-          <button type="button" class="toolbar-btn toolbar-btn--danger" @click="handleBatchDelete">
-            <icon-delete />
-            <span>删除</span>
+          <button type="button" class="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-red-500 transition-all hover:bg-red-50 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/20" title="删除" @click="handleBatchDelete">
+            <icon-delete class="h-4 w-4" />
           </button>
         </template>
 
         <!-- 常规操作 -->
         <template v-else>
           <button type="button"
-            class="toolbar-btn"
-            :class="{ 'toolbar-btn--active': showFilters }"
+            class="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-slate-500 transition-all hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/20"
+            :class="{ 'bg-slate-100 text-slate-700': showFilters }"
+            :title="showFilters ? '收起筛选' : '展开筛选'"
             @click="showFilters = !showFilters"
           >
-            <icon-filter />
-            <span>筛选</span>
+            <icon-filter class="h-4 w-4" />
           </button>
 
-          <button type="button" class="toolbar-btn" @click="handleRefresh">
-            <icon-refresh />
-            <span>刷新</span>
+          <button type="button" class="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-slate-500 transition-all hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/20" title="刷新" @click="handleRefresh">
+            <icon-refresh class="h-4 w-4" />
           </button>
 
           <slot name="extra-actions" />
@@ -235,16 +224,16 @@ defineExpose({
     </div>
 
     <!-- 筛选面板 -->
-    <div v-if="showFilters" class="filter-panel">
+    <div v-if="showFilters" class="panel-surface mt-2 px-4 py-3">
       <slot name="filters" :filters="activeFilters" :update-filters="setFilters">
-        <div class="filter-group">
-          <span class="filter-label">状态：</span>
-          <div class="filter-options">
+        <div class="flex flex-wrap items-center gap-3">
+          <span class="text-sm font-medium text-slate-600">状态：</span>
+          <div class="flex flex-wrap items-center gap-1.5">
             <button type="button"
               v-for="option in ['全部', '活跃', '停用']"
               :key="option"
-              class="filter-option"
-              :class="{ 'filter-option--active': activeFilters.status === option }"
+              class="cursor-pointer rounded-lg border border-transparent bg-transparent px-3 py-1.5 text-sm font-medium text-slate-600 transition-all hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/20"
+              :class="{ 'border-slate-200 bg-white shadow-sm text-slate-900': activeFilters.status === option }"
               @click="patchFilters({ status: option === '全部' ? undefined : option })"
             >
               {{ option }}
@@ -255,14 +244,14 @@ defineExpose({
     </div>
 
     <!-- 批量操作栏 (移动端) -->
-    <div v-if="selectedKeys.length > 0" class="batch-bar-mobile">
-      <div class="batch-info">
-        <icon-check class="batch-icon" />
+    <div v-if="selectedKeys.length > 0" class="mt-2 flex items-center justify-between rounded-xl bg-slate-900 px-4 py-3 text-white shadow-md lg:hidden">
+      <div class="flex items-center gap-2 text-sm font-medium">
+        <icon-check class="h-4 w-4" />
         <span>已选择 {{ selectedKeys.length }} 项</span>
       </div>
-      <div class="batch-actions">
-        <button type="button" class="batch-btn" @click="clearSelection">取消</button>
-        <button type="button" class="batch-btn batch-btn--danger" @click="handleBatchDelete">删除</button>
+      <div class="flex items-center gap-2">
+        <button type="button" class="cursor-pointer rounded-lg border-0 bg-white/20 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-white/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/20" @click="clearSelection">取消</button>
+        <button type="button" class="cursor-pointer rounded-lg border-0 bg-red-500 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/20" @click="handleBatchDelete">删除</button>
       </div>
     </div>
   </div>

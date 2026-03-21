@@ -16,6 +16,8 @@ export const STATUS_LABEL: Record<string, string> = {
   error: "错误",
 
   // Agent
+  idle: "空闲",
+  starting: "启动中",
   stopping: "停止中",
   stopped: "已停止",
 };
@@ -26,6 +28,8 @@ export const STATUS_COLOR: Record<string, string> = {
   inactive: "gray",
   pending: "gray",
   running: "blue",
+  idle: "blue",
+  starting: "blue",
   done: "green",
   success: "green",
   failed: "red",
@@ -41,6 +45,8 @@ export const STATUS_DOT_CLASS: Record<string, string> = {
   inactive: "neutral",
   pending: "neutral",
   running: "running",
+  idle: "online",
+  starting: "neutral",
   done: "online",
   success: "online",
   failed: "offline",

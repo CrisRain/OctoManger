@@ -1,12 +1,21 @@
 import path from "node:path";
 import vue from "@vitejs/plugin-vue";
 import { defineConfig } from "vite";
+import tailwindcss from "@tailwindcss/vite";
 import AutoImport from "unplugin-auto-import/vite";
 import Components from "unplugin-vue-components/vite";
 import viteCompression from "vite-plugin-compression";
 
 export default defineConfig({
+  css: {
+    preprocessorOptions: {
+      scss: {
+        api: "modern-compiler",
+      },
+    },
+  },
   plugins: [
+    tailwindcss(),
     vue(),
     AutoImport({
       imports: [
@@ -27,6 +36,9 @@ export default defineConfig({
             "throttle",
             "copyToClipboard",
           ],
+          "@/store/command-palette": [
+            "useCommandPaletteStore"
+          ]
         },
       ],
       dts: "src/auto-imports.d.ts",

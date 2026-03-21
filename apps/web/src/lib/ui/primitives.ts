@@ -43,12 +43,6 @@ function getFromPath(source: unknown, path: string | undefined) {
   }, source);
 }
 
-function normalizeWidth(width: unknown) {
-  if (typeof width === "number") return `${width}px`;
-  if (typeof width === "string") return width;
-  return undefined;
-}
-
 function flattenNodes(nodes: VNode[] = []): VNode[] {
   const result: VNode[] = [];
   for (const node of nodes) {
@@ -277,16 +271,19 @@ export const UiSpin = defineComponent({
   name: "UiSpin",
   props: {
     loading: { type: Boolean, default: true },
-    size: { type: [Number, String], default: 24 },
+    size: { type: [Number, String], default: "1.5em" },
     tip: { type: String, default: "" },
   },
   setup(props, { slots, attrs }) {
+    const normalizeSize = (value: number | string) =>
+      typeof value === "number" ? `${value / 16}em` : String(value);
+
     const renderSpinner = () =>
       h("span", {
         class: "ui-spin-icon inline-block animate-spin rounded-full border-2 border-slate-300 border-t-teal-600",
         style: {
-          width: typeof props.size === "number" ? `${props.size}px` : String(props.size),
-          height: typeof props.size === "number" ? `${props.size}px` : String(props.size),
+          inlineSize: normalizeSize(props.size),
+          blockSize: normalizeSize(props.size),
         },
       });
 
@@ -337,6 +334,8 @@ export const UiFormItem = defineComponent({
     help: { type: String, default: "" },
   },
   setup(props, { slots, attrs }) {
+    const hasLabel = computed(() => Boolean(props.label || slots.label));
+
     return () =>
       h(
         "div",
@@ -345,11 +344,15 @@ export const UiFormItem = defineComponent({
           class: cx("ui-form-item space-y-2", attrs.class as string),
         },
         [
-          props.label
-            ? h("label", { class: "ui-form-item-label ui-form-item-label-col inline-flex items-center gap-1 text-sm font-semibold text-slate-700" }, [
-                props.label,
-                props.required ? h("span", { class: "text-red-500" }, "*") : null,
-              ])
+          hasLabel.value
+            ? h(
+                "label",
+                { class: "ui-form-item-label ui-form-item-label-col inline-flex w-full items-center gap-1 text-sm font-semibold text-slate-700" },
+                slots.label?.() ?? [
+                  props.label,
+                  props.required ? h("span", { class: "text-red-500" }, "*") : null,
+                ],
+              )
             : null,
           h("div", { class: "ui-form-item-wrapper-col ui-form-item-body ui-form-item-content-flex" }, slots.default?.()),
           props.help
@@ -763,7 +766,6 @@ export const UiModal = defineComponent({
   props: {
     visible: { type: Boolean, default: false },
     title: { type: String, default: "" },
-    width: { type: [Number, String], default: 520 },
     footer: { type: [Boolean, String] as PropType<boolean | string>, default: true },
     okText: { type: String, default: "确定" },
     cancelText: { type: String, default: "取消" },
@@ -782,8 +784,6 @@ export const UiModal = defineComponent({
     return () => {
       if (!props.visible) return null;
 
-      const width = normalizeWidth(props.width) ?? "520px";
-
       return h(Teleport, { to: "body" }, [
         h(
           "div",
@@ -796,7 +796,7 @@ export const UiModal = defineComponent({
             },
           },
           [
-            h("div", { class: "ui-modal-simple w-full max-h-[90vh] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl", style: { maxWidth: width } }, [
+            h("div", { class: "ui-modal-simple w-full max-h-[90vh] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl", style: { maxInlineSize: "var(--modal-inline-size)" } }, [
               props.title || slots.title
                 ? h("header", { class: "ui-modal-header flex items-center justify-between border-b border-slate-200 px-6 py-4" }, [
                     h("h3", { class: "text-base font-semibold text-slate-900" }, slots.title?.() ?? props.title),
@@ -808,12 +808,23 @@ export const UiModal = defineComponent({
                             class: "rounded-lg p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700",
                             onClick: close,
                           },
-                          "×",
+                          h("svg", {
+                            class: "h-[1em] w-[1em]",
+                            viewBox: "0 0 24 24",
+                            fill: "none",
+                            stroke: "currentColor",
+                            "stroke-width": "2",
+                            "stroke-linecap": "round",
+                            "stroke-linejoin": "round",
+                          }, [
+                            h("path", { d: "M18 6 6 18" }),
+                            h("path", { d: "m6 6 12 12" }),
+                          ]),
                         )
                       : null,
                   ])
                 : null,
-              h("div", { class: "ui-modal-body max-h-[60vh] overflow-auto px-6 py-5" }, slots.default?.()),
+              h("div", { class: "ui-modal-body overflow-auto px-6 py-5", style: { maxBlockSize: "var(--modal-body-block-size)" } }, slots.default?.()),
               props.footer === false
                 ? null
                 : h("footer", { class: "ui-modal-footer flex items-center justify-end gap-3 border-t border-slate-200 px-6 py-4" }, [
@@ -851,8 +862,6 @@ export const UiDrawer = defineComponent({
   props: {
     visible: { type: Boolean, default: false },
     placement: { type: String as PropType<"left" | "right" | "top" | "bottom">, default: "right" },
-    width: { type: [Number, String], default: 420 },
-    height: { type: [Number, String], default: 420 },
     closable: { type: Boolean, default: true },
     header: { type: Boolean, default: true },
     footer: { type: Boolean, default: false },
@@ -876,9 +885,9 @@ export const UiDrawer = defineComponent({
 
     const panelStyle = computed(() => {
       if (props.placement === "top" || props.placement === "bottom") {
-        return { height: normalizeWidth(props.height) ?? "420px" };
+        return { blockSize: "var(--drawer-block-size)" };
       }
-      return { width: normalizeWidth(props.width) ?? "420px" };
+      return { inlineSize: "var(--drawer-inline-size)" };
     });
 
     return () => {
@@ -915,7 +924,18 @@ export const UiDrawer = defineComponent({
                               class: "rounded-lg p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700",
                               onClick: close,
                             },
-                            "×",
+                            h("svg", {
+                              class: "h-[1em] w-[1em]",
+                              viewBox: "0 0 24 24",
+                              fill: "none",
+                              stroke: "currentColor",
+                              "stroke-width": "2",
+                              "stroke-linecap": "round",
+                              "stroke-linejoin": "round",
+                            }, [
+                              h("path", { d: "M18 6 6 18" }),
+                              h("path", { d: "m6 6 12 12" }),
+                            ]),
                           )
                         : null,
                     ])
@@ -1038,11 +1058,14 @@ export const UiSkeletonLine = defineComponent({
   name: "UiSkeletonLine",
   props: {
     rows: { type: Number, default: 1 },
-    lineHeight: { type: Number, default: 14 },
-    lineSpacing: { type: Number, default: 8 },
+    lineHeight: { type: [Number, String], default: "0.875em" },
+    lineSpacing: { type: [Number, String], default: "0.5em" },
     widths: { type: Array as PropType<Array<number | string>>, default: () => ["100%"] },
   },
   setup(props, { attrs }) {
+    const normalizeLength = (value: number | string) =>
+      typeof value === "number" ? `${value / 16}em` : String(value);
+
     return () =>
       h(
         "div",
@@ -1055,8 +1078,8 @@ export const UiSkeletonLine = defineComponent({
             key: index,
             class: "ui-skeleton-line-row h-3 animate-pulse rounded bg-slate-200",
             style: {
-              height: `${props.lineHeight}px`,
-              marginTop: index === 0 ? "0px" : `${props.lineSpacing}px`,
+              blockSize: normalizeLength(props.lineHeight),
+              marginTop: index === 0 ? "0" : normalizeLength(props.lineSpacing),
               width: String(props.widths[index] ?? props.widths[props.widths.length - 1] ?? "100%"),
             },
           }),
@@ -1087,7 +1110,6 @@ interface ParsedColumn {
   key: string;
   title?: string;
   dataIndex?: string;
-  width?: string;
   align?: "left" | "center" | "right";
   slotName?: string;
   cell?: (args: { record: unknown; rowIndex: number; column: ParsedColumn }) => VNode[];
@@ -1098,7 +1120,6 @@ export const UiTableColumn = defineComponent({
   props: {
     title: { type: String, default: "" },
     dataIndex: { type: String, default: "" },
-    width: { type: [Number, String], default: undefined },
     align: { type: String as PropType<"left" | "center" | "right">, default: "left" },
   },
   setup() {
@@ -1154,7 +1175,6 @@ export const UiTable = defineComponent({
           key: String(column.key ?? column.dataIndex ?? index),
           title: String(column.title ?? ""),
           dataIndex: typeof column.dataIndex === "string" ? column.dataIndex : undefined,
-          width: normalizeWidth(column.width),
           align: (column.align as ParsedColumn["align"]) ?? "left",
           slotName: typeof column.slotName === "string" ? column.slotName : undefined,
         }));
@@ -1181,7 +1201,6 @@ export const UiTable = defineComponent({
                   ? (titleSlot().map((item) => (typeof item.children === "string" ? item.children : "")).join("") || "")
                   : "",
             dataIndex: typeof nodeProps.dataIndex === "string" ? nodeProps.dataIndex : undefined,
-            width: normalizeWidth(nodeProps.width),
             align: (nodeProps.align as ParsedColumn["align"]) ?? "left",
             cell: children?.cell
               ? (args) => children.cell?.(args) ?? []
@@ -1219,7 +1238,7 @@ export const UiTable = defineComponent({
 
     return () => {
       if (props.loading) {
-        return h("div", { class: cx("ui-table-container flex min-h-[180px] items-center justify-center", attrs.class as string) }, [
+        return h("div", { class: cx("ui-table-container flex min-h-[12em] items-center justify-center", attrs.class as string) }, [
           h(UiSpin, { loading: true, tip: "加载中..." }),
         ]);
       }
@@ -1240,7 +1259,6 @@ export const UiTable = defineComponent({
                         key: column.key,
                         class: "ui-table-th ui-table-column border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500",
                         style: {
-                          width: column.width,
                           textAlign: column.align ?? "left",
                         },
                       },

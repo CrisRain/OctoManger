@@ -68,44 +68,44 @@ function executeCommand(command: CommandItem) {
   <div class="keyboard-shortcuts">
     <!-- Command palette -->
     <ui-modal v-model:visible="isOpen" :footer="false" :closable="false" class="search-modal">
-      <div class="command-palette">
-        <div class="command-palette__input-wrap">
-          <icon-search class="command-palette__search-icon" />
+      <div class="panel-surface flex flex-col overflow-hidden bg-slate-50">
+        <div class="flex items-center gap-3.5 border-b border-slate-200 bg-slate-50/85 px-5 py-4">
+          <icon-search class="h-4 w-4 flex-shrink-0" />
           <input
             v-model="searchQuery"
             type="text"
-            class="command-palette__input"
+            class="flex-1 bg-transparent text-base font-medium text-slate-900 placeholder:text-slate-400 outline-none"
             placeholder="搜索页面、功能..."
             autofocus
           />
-          <kbd class="command-palette__shortcut">ESC</kbd>
+          <kbd class="rounded-full border border-slate-200 bg-white/70 px-2.5 py-1 font-mono text-xs font-medium text-slate-500">ESC</kbd>
         </div>
 
-        <div class="command-palette__list">
+        <div class="overflow-y-auto px-3 py-3">
           <button
             type="button"
             v-for="(command, index) in filteredCommands"
             :key="command.id"
-            class="command-palette__item"
+            class="flex w-full items-center gap-3.5 rounded-xl border border-transparent bg-transparent px-4 py-3 text-left transition-all hover:border-slate-200 hover:bg-white/92 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/20"
             @click="executeCommand(command)"
           >
-            <div class="command-palette__item-icon">
-              <component :is="command.icon || IconSearch" />
+            <div class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-slate-50 border border-slate-200 text-slate-500 shadow-sm">
+              <component :is="command.icon || IconSearch" class="h-4 w-4" />
             </div>
-            <div class="command-palette__item-content">
-              <div class="command-palette__item-label">{{ command.label }}</div>
-              <div v-if="command.description" class="command-palette__item-desc">
+            <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+              <div class="text-sm font-semibold text-slate-900">{{ command.label }}</div>
+              <div v-if="command.description" class="text-xs leading-5 text-slate-500">
                 {{ command.description }}
               </div>
             </div>
-            <div class="command-palette__item-shortcut">
+            <div class="flex-shrink-0 rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-500">
               <span v-if="command.shortcut">{{ command.shortcut }}</span>
               <span v-else-if="index === 0">↵</span>
               <span v-else>{{ index + 1 }}</span>
             </div>
           </button>
 
-          <div v-if="!filteredCommands.length" class="command-palette__empty">
+          <div v-if="!filteredCommands.length" class="py-10 text-center text-sm text-slate-500">
             未找到相关结果
           </div>
         </div>
@@ -114,7 +114,7 @@ function executeCommand(command: CommandItem) {
 
     <!-- Floating trigger -->
     <button type="button"
-      class="command-palette__trigger"
+      class="fixed bottom-[calc(1.25rem_+_env(safe-area-inset-bottom))] right-5 z-50 inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white/92 text-slate-500 shadow-md backdrop-blur transition-all hover:border-[var(--accent)]/30 hover:text-[var(--accent)] hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/20"
       @click="emit('update:open', true)"
       title="快捷键帮助 (⌘K)"
     >

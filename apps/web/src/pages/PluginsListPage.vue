@@ -90,7 +90,7 @@ function closeSyncResult() {
 </script>
 
 <template>
-  <div class="page-container plugins-list-page">
+  <div class="page-shell plugins-list-page">
     <PageHeader
       title="插件管理"
       subtitle="查看和管理已加载的系统插件"
@@ -109,12 +109,12 @@ function closeSyncResult() {
     <!-- 同步结果横幅 -->
     <div
       v-if="syncResult"
-      class="sync-banner"
-      :class="syncResult.failed ? 'sync-banner--warn' : 'sync-banner--ok'"
+      class="mb-5 rounded-xl border p-4 shadow-sm"
+      :class="syncResult.failed ? 'border-amber-200 bg-amber-50/80 text-amber-800' : 'border-emerald-200 bg-emerald-50/80 text-emerald-800'"
     >
-      <div class="banner-summary">
-        <icon-check-circle v-if="!syncResult.failed" class="banner-icon banner-icon--ok" />
-        <icon-exclamation-circle v-else class="banner-icon banner-icon--warn" />
+      <div class="flex items-center gap-3">
+        <icon-check-circle v-if="!syncResult.failed" class="h-5 w-5 flex-shrink-0 text-emerald-600" />
+        <icon-exclamation-circle v-else class="h-5 w-5 flex-shrink-0 text-amber-600" />
         <span>
           同步完成：<strong>{{ syncResult.synced }}</strong> 个成功
           <template v-if="syncResult.failed">，<strong>{{ syncResult.failed }}</strong> 个失败</template>
@@ -123,7 +123,7 @@ function closeSyncResult() {
           <template #icon><icon-close /></template>
         </ui-button>
       </div>
-      <ul v-if="syncResult.errors.length" class="banner-errors">
+      <ul v-if="syncResult.errors.length" class="mt-3 pl-5 text-sm leading-6">
         <li v-for="(msg, i) in syncResult.errors" :key="i">{{ msg }}</li>
       </ul>
     </div>
@@ -138,26 +138,26 @@ function closeSyncResult() {
     >
       <template #filters>
         <!-- 健康状态筛选 -->
-        <div class="filter-group">
-          <span class="filter-label">状态：</span>
-          <div class="filter-options">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="text-xs font-medium text-slate-500">状态：</span>
+          <div class="flex flex-wrap items-center gap-1">
             <button type="button"
-              class="filter-option"
-              :class="{ 'filter-option--active': !healthFilter }"
+              class="filter-chip"
+              :class="{ active: !healthFilter }"
               @click="healthFilter = ''"
             >
               全部
             </button>
             <button type="button"
-              class="filter-option"
-              :class="{ 'filter-option--active': healthFilter === 'healthy' }"
+              class="filter-chip"
+              :class="{ active: healthFilter === 'healthy' }"
               @click="healthFilter = 'healthy'"
             >
               正常
             </button>
             <button type="button"
-              class="filter-option"
-              :class="{ 'filter-option--active': healthFilter === 'unhealthy' }"
+              class="filter-chip"
+              :class="{ active: healthFilter === 'unhealthy' }"
               @click="healthFilter = 'unhealthy'"
             >
               异常
@@ -168,9 +168,8 @@ function closeSyncResult() {
     </SmartListBar>
 
     <!-- 数据表格 -->
-    <ui-card class="data-grid-card table-desktop-only">
+    <ui-card class="mb-4 hidden lg:block">
       <ui-table
-        class="premium-table"
         :data="filteredPlugins"
         :loading="loading"
         :pagination="{
@@ -185,28 +184,28 @@ function closeSyncResult() {
           <!-- 插件 Key -->
           <ui-table-column title="插件 Key" data-index="manifest.key">
             <template #cell="{ record }">
-              <code class="plugin-key">@{{ record.manifest.key }}</code>
+              <code class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-mono font-semibold text-slate-700 border-slate-200 bg-white/[64%]">@{{ record.manifest.key }}</code>
             </template>
           </ui-table-column>
 
           <!-- 名称 -->
           <ui-table-column title="名称" data-index="manifest.name">
             <template #cell="{ record }">
-              <span class="plugin-name">{{ record.manifest.name }}</span>
+              <span class="text-sm font-semibold text-slate-900">{{ record.manifest.name }}</span>
             </template>
           </ui-table-column>
 
           <!-- 版本 -->
           <ui-table-column title="版本" data-index="manifest.version">
             <template #cell="{ record }">
-              <code class="plugin-version">{{ record.manifest.version || 'Unmarked' }}</code>
+              <code class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-mono font-semibold text-sky-700 border-slate-200 bg-slate-50">{{ record.manifest.version || 'Unmarked' }}</code>
             </template>
           </ui-table-column>
 
           <!-- 操作数 -->
           <ui-table-column title="可用操作">
             <template #cell="{ record }">
-              <span class="action-count">{{ record.manifest.actions?.length || 0 }} 个</span>
+              <span class="text-sm font-medium text-slate-700">{{ record.manifest.actions?.length || 0 }} 个</span>
             </template>
           </ui-table-column>
 
@@ -214,12 +213,12 @@ function closeSyncResult() {
           <ui-table-column title="状态">
             <template #cell="{ record }">
               <span
-                class="status-badge"
-                :class="record.healthy ? 'status-badge--ok' : 'status-badge--error'"
+                class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold"
+                :class="record.healthy ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-700'"
               >
                 <span
-                  class="status-dot"
-                  :class="record.healthy ? 'status-dot--ok' : 'status-dot--error'"
+                  class="inline-block h-2 w-2 flex-shrink-0 rounded-full"
+                  :class="record.healthy ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'"
                 ></span>
                 {{ record.healthy ? '正常' : '异常' }}
               </span>
@@ -227,7 +226,7 @@ function closeSyncResult() {
           </ui-table-column>
 
           <!-- 快速操作 -->
-          <ui-table-column title="操作" :width="80" align="right">
+          <ui-table-column title="操作" align="right">
             <template #cell="{ record }">
               <ui-button size="small" type="text" @click="viewDetail(record)">
                 <template #icon><icon-eye /></template>
@@ -240,7 +239,7 @@ function closeSyncResult() {
         <!-- 空状态 -->
         <template #empty>
           <ui-empty description="暂无插件">
-            <p class="empty-hint">请将插件放入 plugins/modules 目录后重启服务，或点击「同步插件」</p>
+            <p class="text-sm leading-6 text-slate-500">请将插件放入 plugins/modules 目录后重启服务，或点击「同步插件」</p>
             <ui-button type="primary" @click="handleSync">
               <template #icon><icon-sync /></template>
               同步插件
@@ -250,20 +249,20 @@ function closeSyncResult() {
       </ui-table>
     </ui-card>
 
-    <div class="mobile-list">
+    <div class="flex flex-col gap-3 lg:hidden">
       <ui-card
         v-for="record in filteredPlugins"
         :key="record.manifest.key"
-        class="mobile-list-card"
+        class="rounded-xl border p-5 border-slate-200 bg-white shadow-sm"
       >
-        <div class="mobile-list-header">
-          <div class="icon-box icon-pink">
+        <div class="mb-3 flex items-center gap-3">
+          <div class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-sm text-white icon-pink">
             <icon-apps />
           </div>
-          <div class="mobile-list-title-group">
-            <div class="mobile-list-title">{{ record.manifest.name }}</div>
-            <div class="mobile-list-subtitle">
-              <code class="plugin-key">@{{ record.manifest.key }}</code>
+          <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+            <div class="truncate text-sm font-semibold text-slate-900">{{ record.manifest.name }}</div>
+            <div class="text-xs text-slate-500">
+              <code class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-mono font-semibold text-slate-700 border-slate-200 bg-white/[64%]">@{{ record.manifest.key }}</code>
             </div>
           </div>
           <ui-button size="small" type="text" @click="viewDetail(record)">
@@ -272,31 +271,31 @@ function closeSyncResult() {
           </ui-button>
         </div>
 
-        <div class="mobile-list-meta">
-          <div class="mobile-list-meta-row">
-            <span class="mobile-list-label">版本</span>
-            <div class="mobile-list-value">
-              <code class="plugin-version">{{ record.manifest.version || 'Unmarked' }}</code>
+        <div class="flex flex-col gap-2">
+          <div class="flex items-center justify-between gap-2">
+            <span class="w-12 flex-shrink-0 text-xs font-medium text-slate-500">版本</span>
+            <div class="flex flex-wrap items-center gap-1">
+              <code class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-mono font-semibold text-sky-700 border-slate-200 bg-slate-50">{{ record.manifest.version || 'Unmarked' }}</code>
             </div>
           </div>
 
-          <div class="mobile-list-meta-row">
-            <span class="mobile-list-label">操作数</span>
-            <div class="mobile-list-value">
-              <span class="action-count">{{ record.manifest.actions?.length || 0 }} 个</span>
+          <div class="flex items-center justify-between gap-2">
+            <span class="w-12 flex-shrink-0 text-xs font-medium text-slate-500">操作数</span>
+            <div class="flex flex-wrap items-center gap-1">
+              <span class="text-sm font-medium text-slate-700">{{ record.manifest.actions?.length || 0 }} 个</span>
             </div>
           </div>
 
-          <div class="mobile-list-meta-row">
-            <span class="mobile-list-label">状态</span>
-            <div class="mobile-list-value">
+          <div class="flex items-center justify-between gap-2">
+            <span class="w-12 flex-shrink-0 text-xs font-medium text-slate-500">状态</span>
+            <div class="flex flex-wrap items-center gap-1">
               <span
-                class="status-badge"
-                :class="record.healthy ? 'status-badge--ok' : 'status-badge--error'"
+                class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold"
+                :class="record.healthy ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-700'"
               >
                 <span
-                  class="status-dot"
-                  :class="record.healthy ? 'status-dot--ok' : 'status-dot--error'"
+                  class="inline-block h-2 w-2 flex-shrink-0 rounded-full"
+                  :class="record.healthy ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'"
                 ></span>
                 {{ record.healthy ? '正常' : '异常' }}
               </span>
@@ -307,10 +306,10 @@ function closeSyncResult() {
 
       <ui-card
         v-if="!loading && !filteredPlugins.length"
-        class="mobile-list-card mobile-list-empty-card"
+        class="rounded-xl border border-slate-200 bg-white shadow-sm px-5 py-8"
       >
         <ui-empty description="暂无插件">
-          <p class="empty-hint">请将插件放入 plugins/modules 目录后重启服务，或点击「同步插件」</p>
+          <p class="text-sm leading-6 text-slate-500">请将插件放入 plugins/modules 目录后重启服务，或点击「同步插件」</p>
           <ui-button type="primary" @click="handleSync">
             <template #icon><icon-sync /></template>
             同步插件

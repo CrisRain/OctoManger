@@ -1,10 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from "vue";
-import { useRoute, useRouter } from "vue-router";
 import { useAccountTypes } from "@/composables";
-import KeyboardShortcuts from "./KeyboardShortcuts.vue";
 import { navRoutes, routeNames, searchRoutes, shortcutRoutes, to, type IconKey } from "@/router/registry";
-import AppNavList from "./AppNavList.vue";
+import { useCommandPaletteStore } from "@/store/command-palette";
 
 import {
   IconDashboard, IconLayers, IconLink, IconEmail, IconSchedule,
@@ -27,9 +24,9 @@ interface NavItem {
 const route = useRoute();
 const router = useRouter();
 const { data: accountTypes } = useAccountTypes();
+const commandPalette = useCommandPaletteStore();
+
 const mobileOpen = ref(false);
-const commandOpen = ref(false);
-const commandQuery = ref("");
 const keySequence = ref<string[]>([]);
 const keySequenceTimer = ref<number>();
 
@@ -106,8 +103,7 @@ const baseCommands = computed(() => [
     description: "快速搜索任何资源",
     shortcut: "⌘K",
     action: () => {
-      commandOpen.value = true;
-      commandQuery.value = "";
+      commandPalette.open();
     },
   },
   {
@@ -141,15 +137,8 @@ const routeCommands = computed(() =>
 const commands = computed(() => [...baseCommands.value, ...routeCommands.value]);
 
 function handleCommandExecute() {
-  commandOpen.value = false;
-  commandQuery.value = "";
+  commandPalette.close();
 }
-
-watch(commandOpen, (open) => {
-  if (open) {
-    commandQuery.value = "";
-  }
-});
 
 function handleKeyDown(e: KeyboardEvent) {
   const target = e.target as HTMLElement;
@@ -168,8 +157,7 @@ function handleKeyDown(e: KeyboardEvent) {
     switch (e.key.toLowerCase()) {
       case "k":
         e.preventDefault();
-        commandOpen.value = true;
-        commandQuery.value = "";
+        commandPalette.open();
         return;
       case "n":
         e.preventDefault();
@@ -177,8 +165,7 @@ function handleKeyDown(e: KeyboardEvent) {
         return;
       case "/":
         e.preventDefault();
-        commandOpen.value = true;
-        commandQuery.value = "";
+        commandPalette.open();
         return;
       case "r":
         e.preventDefault();
@@ -188,7 +175,7 @@ function handleKeyDown(e: KeyboardEvent) {
   }
 
   if (e.key === "Escape") {
-    commandOpen.value = false;
+    commandPalette.close();
     return;
   }
 
@@ -205,19 +192,12 @@ function handleKeyDown(e: KeyboardEvent) {
   }, 500);
 }
 
-function handlePaletteEvent() {
-  commandOpen.value = true;
-  commandQuery.value = "";
-}
-
 onMounted(() => {
   window.addEventListener("keydown", handleKeyDown);
-  window.addEventListener("command-palette:open", handlePaletteEvent as EventListener);
 });
 
 onUnmounted(() => {
   window.removeEventListener("keydown", handleKeyDown);
-  window.removeEventListener("command-palette:open", handlePaletteEvent as EventListener);
   if (keySequenceTimer.value) {
     clearTimeout(keySequenceTimer.value);
   }
@@ -225,34 +205,32 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="app-shell">
+  <div class="flex h-full flex-col">
     <!-- ── Mobile header ─────────────────────────────────── -->
-    <header class="app-shell__topbar lg:hidden">
-      <button type="button" class="app-shell__menu-btn" @click="mobileOpen = true">
+    <header class="sticky top-0 z-40 mt-4 flex h-16 flex-shrink-0 items-center gap-3 rounded-xl border border-slate-200 bg-white/80 px-5 shadow-sm backdrop-blur-md lg:hidden mx-4">
+      <button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition-all hover:bg-slate-50 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/20" @click="mobileOpen = true">
         <icon-menu />
       </button>
-      <span class="app-shell__title">{{ currentTitle }}</span>
-      <span class="app-shell__badge">v2 Premium</span>
+      <span class="flex-1 truncate font-semibold tracking-tight text-slate-900">{{ currentTitle }}</span>
     </header>
 
     <!-- ── Mobile drawer ─────────────────────────────────── -->
     <ui-drawer
       :visible="mobileOpen"
       placement="left"
-      :width="260"
       :footer="false"
       :header="false"
       popup-container="body"
-      class="sidebar-drawer"
+      class="[&.ui-drawer]:bg-[var(--sidebar-bg)] [&.ui-drawer-body]:p-0"
       @cancel="closeMobile"
     >
-      <div class="app-shell__sidebar-inner">
+      <div class="flex h-full w-full flex-col overflow-y-auto px-2 py-3">
         <!-- Logo -->
-        <div class="app-shell__brand">
-          <div class="app-shell__brand-icon">
-            <icon-layers />
+        <div class="mb-5 flex items-center gap-3 px-3 py-3">
+          <div class="flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--accent)] text-white shadow-sm">
+            <icon-layers class="h-4 w-4" />
           </div>
-          <span class="app-shell__brand-name">OctoManager</span>
+          <span class="text-[15px] font-bold tracking-tight text-slate-900">OctoManager</span>
         </div>
 
         <AppNavList
@@ -263,16 +241,16 @@ onUnmounted(() => {
     </ui-drawer>
 
     <!-- ── Main layout ────────────────────────────────────── -->
-    <div class="app-shell__layout">
+    <div class="flex flex-1 overflow-hidden min-h-0">
       <!-- Desktop sidebar -->
-      <aside class="app-shell__sidebar hidden lg:flex">
-        <div class="app-shell__sidebar-inner">
+      <aside class="hidden w-60 flex-shrink-0 overflow-hidden border-r border-slate-200/80 bg-[var(--sidebar-bg)] p-3 lg:flex">
+        <div class="flex h-full w-full flex-col overflow-y-auto px-2 py-3">
           <!-- Logo -->
-          <div class="app-shell__brand">
-            <div class="app-shell__brand-icon">
-              <icon-layers />
+          <div class="mb-5 flex items-center gap-3 px-3 py-3">
+            <div class="flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--accent)] text-white shadow-sm">
+              <icon-layers class="h-4 w-4" />
             </div>
-            <span class="app-shell__brand-name">OctoManager</span>
+            <span class="text-[15px] font-bold tracking-tight text-slate-900">OctoManager</span>
           </div>
 
           <AppNavList :items="navItems" />
@@ -280,7 +258,7 @@ onUnmounted(() => {
       </aside>
 
       <!-- Content Area with Transition -->
-      <main class="app-shell__content">
+      <main class="flex-1 overflow-y-auto bg-[var(--page-bg,#f8fafc)]">
         <router-view v-slot="{ Component }">
           <transition name="fade-slide" mode="out-in">
             <component :is="Component" />
@@ -291,8 +269,8 @@ onUnmounted(() => {
 
     <!-- 全局快捷键 -->
     <KeyboardShortcuts
-      v-model:open="commandOpen"
-      v-model:query="commandQuery"
+      v-model:open="commandPalette.isOpen"
+      v-model:query="commandPalette.query"
       :commands="commands"
       @execute="handleCommandExecute"
     />

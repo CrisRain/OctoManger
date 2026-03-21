@@ -30,10 +30,10 @@ const attrs = useAttrs();
 
 const wrapperClass = computed(() =>
   cx(
-    "ui-select-view relative flex items-center rounded-xl border border-slate-300 bg-white px-3 shadow-input transition-all",
+    "ui-select-view relative flex items-center rounded-lg border border-slate-200 bg-white px-3 shadow-sm transition-all hover:border-slate-300 focus-within:ring-2 focus-within:ring-slate-400/20",
     "focus-within:border-accent focus-within:shadow-input-focus",
     !props.multiple && "ui-select-view-single",
-    props.disabled && "bg-slate-50 opacity-70",
+    props.disabled && "bg-white/50 opacity-60",
     attrs.class as string,
   ),
 );
@@ -66,7 +66,7 @@ function onClear(event: MouseEvent) {
 <template>
   <div v-bind="{ ...attrs, class: undefined }" :class="wrapperClass">
     <select
-      class="h-10 w-full appearance-none border-0 bg-transparent pr-7 text-sm text-slate-900 outline-none"
+      class="min-h-[2.85em] w-full appearance-none border-0 bg-transparent pr-8 text-sm font-medium tracking-[-0.01em] text-slate-900 outline-none"
       :value="(modelValue ?? '') as never"
       :disabled="disabled"
       :multiple="multiple"
@@ -88,11 +88,11 @@ function onClear(event: MouseEvent) {
     <button
       v-if="showClear"
       type="button"
-      class="mr-1 text-slate-400 transition hover:text-slate-600"
+      class="mr-1 rounded-full bg-slate-100/85 px-2 py-1 text-slate-400 transition hover:bg-white hover:text-slate-700"
       @click="onClear"
     >
       ×
     </button>
-    <span v-else class="pointer-events-none absolute right-3 text-slate-400">▾</span>
+    <span v-else class="pointer-events-none absolute right-4 text-slate-400">▾</span>
   </div>
 </template>

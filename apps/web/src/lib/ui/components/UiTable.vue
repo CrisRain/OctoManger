@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch, useSlots, useAttrs, type VNode } from "vue";
-import { flattenNodes, normalizeWidth, getFromPath, cx } from "../utils";
+import { flattenNodes, getFromPath, cx } from "../utils";
 import UiSpin from "./UiSpin.vue";
 import UiEmpty from "./UiEmpty.vue";
 import UiButton from "./UiButton.vue";
@@ -9,7 +9,6 @@ interface ParsedColumn {
   key: string;
   title?: string;
   dataIndex?: string;
-  width?: string;
   align?: "left" | "center" | "right";
   slotName?: string;
   cell?: (args: { record: unknown; rowIndex: number; column: ParsedColumn }) => VNode[];
@@ -67,7 +66,6 @@ const parsedColumns = computed<ParsedColumn[]>(() => {
       key: String(col.key ?? col.dataIndex ?? i),
       title: String(col.title ?? ""),
       dataIndex: typeof col.dataIndex === "string" ? col.dataIndex : undefined,
-      width: normalizeWidth(col.width),
       align: (col.align as ParsedColumn["align"]) ?? "left",
       slotName: typeof col.slotName === "string" ? col.slotName : undefined,
     }));
@@ -86,7 +84,6 @@ const parsedColumns = computed<ParsedColumn[]>(() => {
         key: String(node.key ?? np.dataIndex ?? index),
         title: typeof np.title === "string" ? np.title : "",
         dataIndex: typeof np.dataIndex === "string" ? np.dataIndex : undefined,
-        width: normalizeWidth(np.width),
         align: (np.align as ParsedColumn["align"]) ?? "left",
         cell: children?.cell ? (args) => children.cell?.(args) ?? [] : undefined,
       } satisfies ParsedColumn;
@@ -117,7 +114,7 @@ function keyForRow(record: unknown, index: number): string {
   <div
     v-if="loading"
     v-bind="{ ...attrs, class: undefined }"
-    :class="cx('ui-table-container flex min-h-[180px] items-center justify-center', attrs.class as string)"
+    :class="cx('ui-table-container flex min-h-[12em] items-center justify-center', attrs.class as string)"
   >
     <UiSpin :loading="true" tip="加载中..." />
   </div>
@@ -129,8 +126,8 @@ function keyForRow(record: unknown, index: number): string {
           <th
             v-for="col in parsedColumns"
             :key="col.key"
-            class="ui-table-th ui-table-column border-b border-slate-200/80 bg-slate-50/50 px-5 py-3.5 text-left text-[12px] font-bold uppercase tracking-[0.08em] text-text-muted"
-            :style="{ width: col.width, textAlign: col.align ?? 'left' }"
+            class="ui-table-th ui-table-column border-b border-slate-200 bg-slate-50/50 px-5 py-3 text-left text-[12px] font-medium uppercase tracking-wider text-slate-500"
+            :style="{ textAlign: col.align ?? 'left' }"
           >
             {{ col.title }}
           </th>
@@ -140,12 +137,12 @@ function keyForRow(record: unknown, index: number): string {
         <tr
           v-for="(record, rowIndex) in pagedRows"
           :key="keyForRow(record, rowIndex)"
-          class="ui-table-tr transition-colors duration-150 hover:bg-slate-50/80"
+          class="ui-table-tr transition-colors duration-150 hover:bg-slate-50/50"
         >
           <td
             v-for="col in parsedColumns"
             :key="`${col.key}-${rowIndex}`"
-            class="ui-table-td ui-table-column border-b border-slate-100 px-5 py-[18px] align-top text-[14px] text-text-primary"
+            class="ui-table-td ui-table-column border-b border-slate-200 px-5 py-3.5 align-top text-[14px] text-slate-700"
             :style="{ textAlign: col.align ?? 'left' }"
           >
             <component :is="() => renderCell(col, record, rowIndex)" />

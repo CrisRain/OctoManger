@@ -13,27 +13,27 @@ const accountType = computed(() => accountTypes.value.find((t) => t.key === type
 </script>
 
 <template>
-  <div class="page-container form-page">
+  <div class="page-shell">
     <PageHeader
-      title="修改账号类型"
+      title="编辑账号类型"
       :subtitle="accountType ? `正在编辑 ${accountType.name}` : ''"
       icon-bg="linear-gradient(135deg, rgba(2,132,199,0.12), rgba(14,165,233,0.12))"
       icon-color="#0284c7"
       :back-to="to.accountTypes.list()"
-      back-label="返回账号类型"
+      back-label="返回账号类型列表"
     >
       <template #icon><icon-layers /></template>
     </PageHeader>
 
-    <div v-if="loading" class="center-empty"><ui-spin :size="36" /></div>
-    <div v-else-if="!accountType" class="center-empty">
-      <p class="muted-copy">未找到该账号类型。</p>
+    <div v-if="loading" class="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed px-6 py-16 text-center border-slate-200 bg-white/[56%] shadow-sm"><ui-spin size="2.25em" /></div>
+    <div v-else-if="!accountType" class="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed px-6 py-16 text-center border-slate-200 bg-white/[56%] shadow-sm">
+      <p class="text-sm leading-6 text-slate-500">未找到该账号类型。</p>
     </div>
     <ui-card v-else>
-      <div class="inline-info-notice">
-        <icon-info-circle class="inline-info-notice-icon" />
-        <p class="inline-info-notice-body">
-          暂不支持通过 UI 修改账号类型配置。请删除后重新创建，或通过 API 修改。
+      <div class="flex items-start gap-3 rounded-xl border border-sky-200 bg-sky-50/70 p-4">
+        <icon-info-circle class="mt-0.5 h-4 w-4 flex-shrink-0 text-sky-600" />
+        <p class="text-sm leading-6 text-slate-700">
+          暂不支持通过 UI 编辑账号类型配置。请删除后重新创建，或通过 API 更新。
         </p>
       </div>
     </ui-card>

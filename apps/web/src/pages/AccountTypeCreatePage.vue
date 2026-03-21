@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { useRouter } from "vue-router";
-import { Message } from "@/lib/feedback";
 import { useCreateAccountType } from "@/composables/useAccountTypes";
+import { useMessage } from "@/composables";
 import { PageHeader } from "@/components/index";
 import { to } from "@/router/registry";
 
 const router = useRouter();
+const message = useMessage();
 const create = useCreateAccountType();
 
 const key = ref("");
@@ -22,23 +23,23 @@ async function handleCreate() {
       schema: {},
       capabilities: {},
     });
-    Message.success("账号类型已创建");
+    message.success("账号类型已创建");
     router.push(to.accountTypes.list());
   } catch (e) {
-    Message.error(e instanceof Error ? e.message : "创建失败");
+    message.error(e instanceof Error ? e.message : "创建失败");
   }
 }
 </script>
 
 <template>
-  <div class="page-container form-page">
+  <div class="page-shell">
     <PageHeader
-      title="新建账号类型"
-      subtitle="定义一个新的账号类别。"
+      title="创建账号类型"
+      subtitle="创建一个新的账号类型"
       icon-bg="linear-gradient(135deg, rgba(2,132,199,0.12), rgba(14,165,233,0.12))"
       icon-color="#0284c7"
       :back-to="to.accountTypes.list()"
-      back-label="返回账号类型"
+      back-label="返回账号类型列表"
     >
       <template #icon><icon-layers /></template>
     </PageHeader>
@@ -58,7 +59,7 @@ async function handleCreate() {
             <ui-option value="system">system</ui-option>
           </ui-select>
         </ui-form-item>
-        <div class="form-actions">
+        <div class="mt-4 flex items-center justify-end gap-2 border-t border-slate-100 pt-4">
           <ui-button @click="router.push(to.accountTypes.list())">取消</ui-button>
           <ui-button
             type="primary"

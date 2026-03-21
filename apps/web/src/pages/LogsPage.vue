@@ -66,11 +66,11 @@ function dotClass(state: string | undefined) { return agentDot[state ?? ""] ?? "
 </script>
 
 <template>
-  <div class="page-container logs-page">
+  <div class="page-shell logs-page">
     <PageHeader
-      title="实时系统观测与日志 (Logs)"
-      subtitle="中央集成的运行状况打点、各路任务执行信标与 Agent 状态事件流观测大屏。"
-      icon-bg="linear-gradient(135deg, rgba(20,184,166,0.16), rgba(45,212,191,0.16))"
+      title="日志与观测"
+      subtitle="查看任务执行日志和 Agent 事件流"
+      icon-bg="linear-gradient(135deg, rgba(10,132,255,0.12), rgba(10,132,255,0.06))"
       icon-color="var(--accent)"
     >
       <template #icon><icon-file /></template>
@@ -78,63 +78,66 @@ function dotClass(state: string | undefined) { return agentDot[state ?? ""] ?? "
 
     <!-- ── System status banner ─────────────────────────────────────────── -->
     <div
-      class="status-banner premium-status-banner"
-      :class="statusData?.database_ok ? 'status-banner--ok' : 'status-banner--err'"
+      class="panel-surface mb-6 flex items-center gap-3 px-5 py-4 text-sm"
+      :class="statusData?.database_ok ? 'border-emerald-200 bg-emerald-50/90 text-emerald-800' : 'border-red-200 bg-red-50/90 text-red-700'"
     >
-      <span class="status-dot-large" :class="statusData?.database_ok ? 'online' : 'offline'" />
-      <span class="banner-text">
+      <span
+        class="inline-block h-2.5 w-2.5 flex-shrink-0 rounded-full"
+        :class="statusData?.database_ok ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'"
+      />
+      <span class="text-sm leading-6 text-current">
         <template v-if="statusData?.database_ok">
-          主线数据库&nbsp;<strong class="fw-bold">心跳正常</strong>
-          &nbsp;<span class="divider">·</span>&nbsp;
-          集成应用插件池 <strong>{{ statusData.plugin_count }}</strong> 装载
-          &nbsp;<span class="divider">·</span>&nbsp;
-          基站标准时间&nbsp;
-          <span class="banner-time">{{ new Date(statusData.now).toLocaleString("zh-CN") }}</span>
+          数据库连接&nbsp;<strong class="font-semibold">正常</strong>
+          &nbsp;<span class="text-slate-400">·</span>&nbsp;
+          已加载插件 <strong>{{ statusData.plugin_count }}</strong> 个
+          &nbsp;<span class="text-slate-400">·</span>&nbsp;
+          当前时间&nbsp;
+          <span class="text-xs font-mono">{{ new Date(statusData.now).toLocaleString("zh-CN") }}</span>
         </template>
-        <template v-else>数据库连接断层，指令信道可能受阻。</template>
+        <template v-else>数据库连接异常，部分功能可能不可用。</template>
       </span>
     </div>
 
     <!-- ── Tabs ─────────────────────────────────────────────────────────── -->
-    <ui-tabs v-model:active-key="activeTab" class="main-tabs premium-tabs" :destroy-on-hide="false">
+    <ui-tabs v-model:active-key="activeTab" class="panel-surface p-4" :destroy-on-hide="false">
 
       <!-- ── Tab 1: Job executions ──────────────────────────────────────── -->
       <ui-tab-pane key="jobs">
         <template #title>
-          <div class="tab-title"><icon-schedule /> 任务执行观测舱</div>
+          <div class="inline-flex items-center gap-2"><icon-schedule /> 任务执行日志</div>
         </template>
-        <div class="split-pane">
+        <div class="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(18em,_1fr)_minmax(0,_1.8fr)]">
           <!-- Left: execution list -->
-          <div class="split-list">
-            <ui-empty v-if="!executions.length" description="暂无执行记录" class="list-empty" />
+          <div class="flex min-h-[320px] max-h-[680px] flex-col gap-2 overflow-y-auto rounded-xl border p-3 border-slate-200 bg-slate-50 shadow-sm backdrop-blur-xl backdrop-saturate-[150%]">
+            <ui-empty v-if="!executions.length" description="暂无执行记录" class="min-h-[220px]" />
             <button
               type="button"
               v-for="ex in executions"
               :key="ex.id"
-              class="list-item"
-              :class="{ 'list-item--active': selectedExecId === ex.id }"
+              class="rounded-xl border border-transparent p-3.5 text-left bg-slate-50 [transition-property:background-color,_border-color,_box-shadow,_transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/20 hover:border-slate-200 hover:bg-white hover:-translate-y-px"
+              :class="{ 'border-blue-500/[18%] bg-white/[86%] shadow-sm': selectedExecId === ex.id }"
               @click="selectExecution(ex.id)"
             >
-              <div class="item-row">
-                <span class="item-id mono">#{{ ex.id }}</span>
+              <div class="flex items-center justify-between gap-3">
+                <span class="text-xs font-semibold text-slate-500 mono">#{{ ex.id }}</span>
                 <ui-tag :color="execColor(ex.status)" size="small">{{ ex.status }}</ui-tag>
               </div>
-              <div class="item-name">{{ ex.definition_name ?? "—" }}</div>
-              <div class="item-meta mono">
+              <div class="mt-2 text-sm font-semibold text-slate-900">{{ ex.definition_name ?? "—" }}</div>
+              <div class="mt-2 flex items-center justify-between gap-3 text-xs text-slate-500 mono">
                 <span>{{ ex.plugin_key }} · {{ ex.action }}</span>
-                <span v-if="ex.worker_id" class="item-time">{{ ex.worker_id }}</span>
+                <span v-if="ex.worker_id" class="text-xs text-slate-400 font-mono">{{ ex.worker_id }}</span>
               </div>
             </button>
           </div>
 
           <!-- Right: terminal -->
-          <div v-if="!selectedExecId" class="split-terminal terminal-placeholder">
-            <icon-schedule class="placeholder-icon" />
+          <div v-if="!selectedExecId" class="flex min-h-[320px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed text-center text-slate-500 border-slate-200 bg-white/[56%]">
+            <icon-schedule class="mb-2 h-10 w-10 text-slate-400" />
             <p>选择左侧的执行记录查看日志</p>
           </div>
           <LogTerminal
             v-else
-            class="split-terminal"
+            class="min-h-[320px]"
             :key="selectedExecId"
             :logs="jobLines"
             :is-live="jobLive"
@@ -147,44 +150,52 @@ function dotClass(state: string | undefined) { return agentDot[state ?? ""] ?? "
       <!-- ── Tab 2: Agent events ─────────────────────────────────────────── -->
       <ui-tab-pane key="agents">
         <template #title>
-          <div class="tab-title"><icon-robot /> Agent 事件射频流</div>
+          <div class="inline-flex items-center gap-2"><icon-robot /> Agent 事件流</div>
         </template>
-        <div class="split-pane">
+        <div class="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(18em,_1fr)_minmax(0,_1.8fr)]">
           <!-- Left: agent list -->
-          <div class="split-list">
-            <ui-empty v-if="!agents.length" description="暂无 Agent" class="list-empty" />
+          <div class="flex min-h-[320px] max-h-[680px] flex-col gap-2 overflow-y-auto rounded-xl border p-3 border-slate-200 bg-slate-50 shadow-sm backdrop-blur-xl backdrop-saturate-[150%]">
+            <ui-empty v-if="!agents.length" description="暂无 Agent" class="min-h-[220px]" />
             <button
               type="button"
               v-for="ag in agents"
               :key="ag.id"
-              class="list-item"
-              :class="{ 'list-item--active': selectedAgentId === ag.id }"
+              class="rounded-xl border border-transparent p-3.5 text-left bg-slate-50 [transition-property:background-color,_border-color,_box-shadow,_transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/20 hover:border-slate-200 hover:bg-white hover:-translate-y-px"
+              :class="{ 'border-blue-500/[18%] bg-white/[86%] shadow-sm': selectedAgentId === ag.id }"
               @click="selectAgent(ag.id)"
             >
-              <div class="item-row">
-                <div class="item-dot-name">
-                  <span class="status-dot" :class="dotClass(ag.runtime_state)" />
-                  <span class="item-name-inline">{{ ag.name }}</span>
+              <div class="flex items-center justify-between gap-3">
+                <div class="flex items-center gap-2">
+                  <span
+                    class="inline-block h-2 w-2 flex-shrink-0 rounded-full"
+                    :class="{
+                      'bg-emerald-500 animate-pulse': ag.runtime_state === 'running',
+                      'bg-sky-400': ag.runtime_state === 'idle',
+                      'bg-red-500': ag.runtime_state === 'error',
+                      'bg-slate-300': !['running', 'idle', 'error'].includes(ag.runtime_state ?? ''),
+                    }"
+                  />
+                  <span class="text-sm font-semibold text-slate-900">{{ ag.name }}</span>
                 </div>
                 <ui-tag :color="agentColor(ag.runtime_state)" size="small">
                   {{ ag.runtime_state ?? "—" }}
                 </ui-tag>
               </div>
-              <div class="item-meta mono">
+              <div class="mt-2 flex items-center justify-between gap-3 text-xs text-slate-500 mono">
                 <span>{{ ag.plugin_key }} · {{ ag.action }}</span>
               </div>
-              <div v-if="ag.last_error" class="item-error">{{ ag.last_error }}</div>
+              <div v-if="ag.last_error" class="mt-2 text-xs text-red-600 overflow-hidden">{{ ag.last_error }}</div>
             </button>
           </div>
 
           <!-- Right: terminal -->
-          <div v-if="!selectedAgentId" class="split-terminal terminal-placeholder">
-            <icon-robot class="placeholder-icon" />
+          <div v-if="!selectedAgentId" class="flex min-h-[320px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed text-center text-slate-500 border-slate-200 bg-white/[56%]">
+            <icon-robot class="mb-2 h-10 w-10 text-slate-400" />
             <p>选择左侧的 Agent 查看实时事件流</p>
           </div>
           <LogTerminal
             v-else
-            class="split-terminal"
+            class="min-h-[320px]"
             :key="selectedAgentId"
             :logs="agentLines"
             :is-live="agentLive"

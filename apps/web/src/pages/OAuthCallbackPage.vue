@@ -8,8 +8,8 @@ const code = computed(() => (route.query.code as string | undefined) ?? "");
 </script>
 
 <template>
-  <div class="standalone-page-shell">
-    <div class="page-container oauth-page">
+  <div class="min-h-screen">
+    <div class="page-shell oauth-page">
       <PageHeader
         title="OAuth 回调"
         subtitle="把下面的 code 复制回邮箱配置页面，完成 Token Exchange。"
@@ -24,7 +24,7 @@ const code = computed(() => (route.query.code as string | undefined) ?? "");
           :model-value="code || 'No code found in query string.'"
           :auto-size="{ minRows: 6 }"
           readonly
-          class="mono-field oauth-code-box"
+          class="font-mono text-sm"
         />
       </ui-card>
     </div>

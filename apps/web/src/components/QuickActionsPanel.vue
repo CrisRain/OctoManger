@@ -1,13 +1,6 @@
 <script setup lang="ts">
 import { useRouter } from "vue-router";
-import {
-  IconUser,
-  IconEmail,
-  IconSync,
-  IconRobot,
-  IconApps,
-  IconRight,
-} from "@/lib/icons";
+import { IconApps } from "@/lib/icons";
 
 interface QuickAction {
   id: string;
@@ -20,23 +13,11 @@ interface QuickAction {
   action?: () => void;
 }
 
-interface RecentItem {
-  id: string;
-  name: string;
-  type?: "account" | "job" | "agent" | "email" | string;
-  path?: string;
-  updatedAt?: string;
-  icon?: any;
-  action?: () => void;
-}
-
 const props = withDefaults(defineProps<{
   actions: QuickAction[];
-  recentItems?: RecentItem[];
   showSearchHint?: boolean;
 }>(), {
   actions: () => [],
-  recentItems: () => [],
   showSearchHint: true,
 });
 
@@ -56,42 +37,17 @@ function handleActionClick(action: QuickAction) {
   }
 }
 
-function handleRecentClick(item: RecentItem) {
-  if (item.action) {
-    item.action();
-    return;
-  }
-  if (item.path) {
-    router.push(item.path);
-  }
-}
-
-function resolveRecentIcon(item: RecentItem) {
-  if (item.icon) return item.icon;
-  switch (item.type) {
-    case "account":
-      return IconUser;
-    case "job":
-      return IconSync;
-    case "agent":
-      return IconRobot;
-    case "email":
-      return IconEmail;
-    default:
-      return IconApps;
-  }
-}
 </script>
 
 <template>
-  <div class="quick-actions-panel">
+  <div class="flex flex-col gap-4">
     <!-- Quick actions -->
-    <div class="quick-actions-panel__section">
-      <div class="quick-actions-panel__header">
-        <h3 class="quick-actions-panel__title">快捷操作</h3>
+    <div class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div class="mb-5 flex items-center justify-between gap-3">
+        <h3 class="text-[15px] font-semibold text-slate-900">快捷操作</h3>
         <button type="button"
           v-if="showSearchHint"
-          class="quick-actions-panel__search-trigger"
+          class="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-600 transition-all hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/20 [&_kbd]:rounded [&_kbd]:border [&_kbd]:border-slate-200 [&_kbd]:bg-white [&_kbd]:px-1.5 [&_kbd]:py-0.5 [&_kbd]:font-mono [&_kbd]:text-xs [&_kbd]:text-slate-600"
           @click="emit('open-search')"
         >
           <kbd>⌘K</kbd>
@@ -99,44 +55,33 @@ function resolveRecentIcon(item: RecentItem) {
         </button>
       </div>
 
-      <div class="quick-actions-panel__grid">
+      <div class="grid grid-cols-2 gap-3 max-md:grid-cols-1">
         <button
           type="button"
           v-for="action in actions"
           :key="action.id"
-          class="quick-actions-panel__card"
-          :class="action.color ? `quick-actions-panel__card--${action.color}` : ''"
+          class="flex flex-col items-start gap-1.5 rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition-all hover:border-slate-300 hover:shadow-md hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/20"
           @click="handleActionClick(action)"
         >
-          <div class="quick-actions-panel__card-icon">
+          <div class="mb-1 flex h-10 w-10 items-center justify-center rounded-lg border shadow-sm"
+               :class="{
+                 'border-blue-200 bg-blue-50 text-blue-600': action.color === 'blue',
+                 'border-orange-200 bg-orange-50 text-orange-600': action.color === 'orange',
+                 'border-[var(--accent)]/20 bg-[var(--accent)]/8 text-[var(--accent)]': action.color === 'teal',
+                 'border-cyan-200 bg-cyan-50 text-cyan-600': action.color === 'cyan',
+                 'border-slate-200 bg-slate-50 text-slate-600': !action.color,
+               }"
+          >
             <component :is="action.icon || IconApps" />
           </div>
-          <div class="quick-actions-panel__card-label">{{ action.label }}</div>
-          <div class="quick-actions-panel__card-desc">{{ action.description }}</div>
-          <div class="quick-actions-panel__card-shortcut" v-if="action.shortcut">
+          <div class="text-sm font-semibold text-slate-900">{{ action.label }}</div>
+          <div class="text-xs leading-relaxed text-slate-500">{{ action.description }}</div>
+          <div class="text-xs text-slate-400" v-if="action.shortcut">
             {{ action.shortcut }}
           </div>
         </button>
       </div>
     </div>
 
-    <!-- Recent items -->
-    <div class="quick-actions-panel__recent" v-if="recentItems?.length">
-      <h3 class="quick-actions-panel__recent-title">最近使用</h3>
-      <button
-        type="button"
-        v-for="item in recentItems"
-        :key="item.id"
-        class="quick-actions-panel__recent-item"
-        @click="handleRecentClick(item)"
-      >
-        <div class="quick-actions-panel__recent-icon">
-          <component :is="resolveRecentIcon(item)" />
-        </div>
-        <div class="quick-actions-panel__recent-name">{{ item.name }}</div>
-        <div class="quick-actions-panel__recent-meta">{{ item.updatedAt }}</div>
-        <icon-right class="quick-actions-panel__recent-arrow" />
-      </button>
-    </div>
   </div>
 </template>

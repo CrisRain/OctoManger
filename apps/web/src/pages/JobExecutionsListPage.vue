@@ -88,11 +88,11 @@ async function copyId(id: number) {
 </script>
 
 <template>
-  <div class="page-container executions-list-page">
+  <div class="page-shell executions-list-page">
     <PageHeader
       title="执行记录"
       subtitle="查看所有任务的历史执行状态和日志"
-      icon-bg="linear-gradient(135deg, rgba(20,184,166,0.16), rgba(45,212,191,0.16))"
+      icon-bg="linear-gradient(135deg, rgba(10,132,255,0.12), rgba(10,132,255,0.06))"
       icon-color="var(--icon-purple)"
     >
       <template #icon><icon-history /></template>
@@ -110,14 +110,14 @@ async function copyId(id: number) {
     >
       <template #filters>
         <!-- 状态筛选 -->
-        <div class="filter-group">
-          <span class="filter-label">状态：</span>
-          <div class="filter-options">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="text-xs font-medium text-slate-500">状态：</span>
+          <div class="flex flex-wrap items-center gap-1">
             <button type="button"
               v-for="option in statusOptions"
               :key="option.value"
-              class="filter-option"
-              :class="{ 'filter-option--active': statusFilter === option.value }"
+              class="filter-chip"
+              :class="{ active: statusFilter === option.value }"
               @click="statusFilter = option.value"
             >
               {{ option.label }}
@@ -128,9 +128,8 @@ async function copyId(id: number) {
     </SmartListBar>
 
     <!-- 数据表格 -->
-    <ui-card class="data-grid-card table-desktop-only">
+    <ui-card class="mb-4 hidden lg:block">
       <ui-table
-        class="premium-table"
         :data="filteredExecutions"
         :loading="loading"
         :pagination="{
@@ -145,24 +144,24 @@ async function copyId(id: number) {
           <!-- 编号 -->
           <ui-table-column title="编号">
             <template #cell="{ record }">
-              <code class="execution-id">#{{ record.id }}</code>
+              <code class="text-xs font-mono font-semibold text-slate-500">#{{ record.id }}</code>
             </template>
           </ui-table-column>
 
           <!-- 任务名称 -->
           <ui-table-column title="任务名称" data-index="definition_name">
             <template #cell="{ record }">
-              <span class="job-name">{{ record.definition_name }}</span>
+              <span class="text-sm font-medium text-slate-900">{{ record.definition_name }}</span>
             </template>
           </ui-table-column>
 
           <!-- 插件 · 动作 -->
           <ui-table-column title="插件 · 动作">
             <template #cell="{ record }">
-              <span class="plugin-action">
-                <span class="plugin-key">{{ record.plugin_key }}</span>
-                <span class="plugin-dot">·</span>
-                <span class="action-tag">{{ record.action }}</span>
+              <span class="inline-flex flex-wrap items-center gap-2">
+                <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-mono font-semibold text-slate-700 border-slate-200 bg-white/[64%]">{{ record.plugin_key }}</span>
+                <span class="text-slate-400">·</span>
+                <span class="inline-flex items-center rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-xs font-mono text-slate-600">{{ record.action }}</span>
               </span>
             </template>
           </ui-table-column>
@@ -177,13 +176,13 @@ async function copyId(id: number) {
           <!-- 节点 -->
           <ui-table-column title="节点">
             <template #cell="{ record }">
-              <code v-if="record.worker_id" class="worker-id">{{ record.worker_id }}</code>
-              <span v-else class="text-muted">未分配</span>
+              <code v-if="record.worker_id" class="inline-flex items-center rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-xs font-mono text-sky-700">{{ record.worker_id }}</code>
+              <span v-else class="text-sm text-slate-400">未分配</span>
             </template>
           </ui-table-column>
 
           <!-- 快速操作 -->
-          <ui-table-column title="操作" :width="80" align="right">
+          <ui-table-column title="操作" align="right">
             <template #cell="{ record }">
               <RowActionsMenu
                 :item="record"
@@ -207,20 +206,20 @@ async function copyId(id: number) {
       </ui-table>
     </ui-card>
 
-    <div class="mobile-list">
+    <div class="flex flex-col gap-3 lg:hidden">
       <ui-card
         v-for="record in filteredExecutions"
         :key="record.id"
-        class="mobile-list-card"
+        class="rounded-xl border p-5 border-slate-200 bg-white shadow-sm"
       >
-        <div class="mobile-list-header">
-          <div class="icon-box icon-purple">
+        <div class="mb-3 flex items-center gap-3">
+          <div class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border border-purple-200 bg-purple-50 text-sm text-purple-600 shadow-sm">
             <icon-history />
           </div>
-          <div class="mobile-list-title-group">
-            <div class="mobile-list-title">{{ record.definition_name || `执行记录 #${record.id}` }}</div>
-            <div class="mobile-list-subtitle">
-              <code class="execution-id">#{{ record.id }}</code>
+          <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+            <div class="truncate text-sm font-semibold text-slate-900">{{ record.definition_name || `执行记录 #${record.id}` }}</div>
+            <div class="text-xs text-slate-500">
+              <code class="text-xs font-mono font-semibold text-slate-500">#{{ record.id }}</code>
             </div>
           </div>
           <RowActionsMenu
@@ -232,30 +231,30 @@ async function copyId(id: number) {
           />
         </div>
 
-        <div class="mobile-list-meta">
-          <div class="mobile-list-meta-row">
-            <span class="mobile-list-label">插件</span>
-            <div class="mobile-list-value">
-              <span class="plugin-action">
-                <span class="plugin-key">{{ record.plugin_key }}</span>
-                <span class="plugin-dot">·</span>
-                <span class="action-tag">{{ record.action }}</span>
+        <div class="flex flex-col gap-2">
+          <div class="flex items-center justify-between gap-2">
+            <span class="w-12 flex-shrink-0 text-xs font-medium text-slate-500">插件</span>
+            <div class="flex flex-wrap items-center gap-1">
+              <span class="inline-flex flex-wrap items-center gap-2">
+                <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-mono font-semibold text-slate-700 border-slate-200 bg-white/[64%]">{{ record.plugin_key }}</span>
+                <span class="text-slate-400">·</span>
+                <span class="inline-flex items-center rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-xs font-mono text-slate-600">{{ record.action }}</span>
               </span>
             </div>
           </div>
 
-          <div class="mobile-list-meta-row">
-            <span class="mobile-list-label">状态</span>
-            <div class="mobile-list-value">
+          <div class="flex items-center justify-between gap-2">
+            <span class="w-12 flex-shrink-0 text-xs font-medium text-slate-500">状态</span>
+            <div class="flex flex-wrap items-center gap-1">
               <StatusTag :status="record.status" />
             </div>
           </div>
 
-          <div class="mobile-list-meta-row">
-            <span class="mobile-list-label">节点</span>
-            <div class="mobile-list-value">
-              <code v-if="record.worker_id" class="worker-id">{{ record.worker_id }}</code>
-              <span v-else class="text-muted">未分配</span>
+          <div class="flex items-center justify-between gap-2">
+            <span class="w-12 flex-shrink-0 text-xs font-medium text-slate-500">节点</span>
+            <div class="flex flex-wrap items-center gap-1">
+              <code v-if="record.worker_id" class="inline-flex items-center rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-xs font-mono text-sky-700">{{ record.worker_id }}</code>
+              <span v-else class="text-sm text-slate-400">未分配</span>
             </div>
           </div>
         </div>
@@ -263,7 +262,7 @@ async function copyId(id: number) {
 
       <ui-card
         v-if="!loading && !filteredExecutions.length"
-        class="mobile-list-card mobile-list-empty-card"
+        class="rounded-xl border border-slate-200 bg-white shadow-sm px-5 py-8"
       >
         <ui-empty description="暂无执行记录">
           <ui-button type="primary" @click="router.push(to.jobs.list())">
@@ -280,56 +279,54 @@ async function copyId(id: number) {
       @edit="goToDetail(currentExecution?.id)"
     >
       <template #detail>
-        <div class="detail-section">
-          <h4 class="detail-section-title">执行信息</h4>
+        <div class="rounded-xl border p-4 border-slate-200 bg-white/[56%]">
+          <h4 class="mb-3 text-sm font-semibold text-slate-900">执行信息</h4>
 
-          <div class="detail-row">
-            <span class="detail-label">执行ID</span>
-            <span class="detail-value">
+          <div class="flex items-start justify-between gap-4 border-b border-slate-100 py-3 first:pt-0 last:border-b-0 last:pb-0 max-md:flex-col max-md:items-start">
+            <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">执行ID</span>
+            <span class="text-sm font-medium text-slate-900">
               <code>{{ currentExecution?.id }}</code>
             </span>
           </div>
 
-          <div class="detail-row">
-            <span class="detail-label">任务名称</span>
-            <span class="detail-value">{{ currentExecution?.definition_name }}</span>
+          <div class="flex items-start justify-between gap-4 border-b border-slate-100 py-3 first:pt-0 last:border-b-0 last:pb-0 max-md:flex-col max-md:items-start">
+            <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">任务名称</span>
+            <span class="text-sm font-medium text-slate-900">{{ currentExecution?.definition_name }}</span>
           </div>
 
-          <div class="detail-row">
-            <span class="detail-label">插件</span>
-            <span class="detail-value">
-              <code class="key-badge">{{ currentExecution?.plugin_key }}</code>
+          <div class="flex items-start justify-between gap-4 border-b border-slate-100 py-3 first:pt-0 last:border-b-0 last:pb-0 max-md:flex-col max-md:items-start">
+            <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">插件</span>
+            <span class="text-sm font-medium text-slate-900">
+              <code class="inline-flex items-center rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-xs font-mono text-slate-600">{{ currentExecution?.plugin_key }}</code>
             </span>
           </div>
 
-          <div class="detail-row">
-            <span class="detail-label">动作</span>
-            <span class="detail-value">
-              <span class="action-tag">{{ currentExecution?.action }}</span>
+          <div class="flex items-start justify-between gap-4 border-b border-slate-100 py-3 first:pt-0 last:border-b-0 last:pb-0 max-md:flex-col max-md:items-start">
+            <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">动作</span>
+            <span class="text-sm font-medium text-slate-900">
+              <span class="inline-flex items-center rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-xs font-mono text-slate-600">{{ currentExecution?.action }}</span>
             </span>
           </div>
 
-          <div class="detail-row">
-            <span class="detail-label">状态</span>
-            <span class="detail-value">
+          <div class="flex items-start justify-between gap-4 border-b border-slate-100 py-3 first:pt-0 last:border-b-0 last:pb-0 max-md:flex-col max-md:items-start">
+            <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">状态</span>
+            <span class="text-sm font-medium text-slate-900">
               <StatusTag v-if="currentExecution" :status="currentExecution.status" />
             </span>
           </div>
 
-          <div class="detail-row">
-            <span class="detail-label">执行节点</span>
-            <span class="detail-value">
+          <div class="flex items-start justify-between gap-4 border-b border-slate-100 py-3 first:pt-0 last:border-b-0 last:pb-0 max-md:flex-col max-md:items-start">
+            <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">执行节点</span>
+            <span class="text-sm font-medium text-slate-900">
               <code v-if="currentExecution?.worker_id">{{ currentExecution.worker_id }}</code>
-              <span v-else class="text-muted">未分配</span>
+              <span v-else class="text-sm text-slate-400">未分配</span>
             </span>
           </div>
         </div>
 
-        <div class="detail-section" v-if="currentExecution?.input">
-          <h4 class="detail-section-title">输入参数</h4>
-          <div class="config-box">
-            <pre>{{ JSON.stringify(currentExecution.input, null, 2) }}</pre>
-          </div>
+        <div class="rounded-xl border p-4 border-slate-200 bg-white/[56%]" v-if="currentExecution?.input">
+          <h4 class="mb-3 text-sm font-semibold text-slate-900">输入参数</h4>
+          <pre class="overflow-auto rounded-lg border border-slate-200 bg-slate-950 p-4 text-xs leading-6 text-slate-300 whitespace-pre-wrap break-all">{{ JSON.stringify(currentExecution.input, null, 2) }}</pre>
         </div>
       </template>
 
@@ -338,7 +335,7 @@ async function copyId(id: number) {
       </template>
 
       <template #footer>
-        <div class="drawer-footer-actions">
+        <div class="flex w-full items-center justify-end gap-2">
           <ui-button @click="copyId(currentExecution?.id)">复制ID</ui-button>
           <ui-button type="primary" @click="goToDetail(currentExecution?.id)">
             查看完整日志

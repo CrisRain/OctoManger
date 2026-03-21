@@ -18,17 +18,16 @@ const execution = computed(() => executions.value.find((e) => e.id === execution
 const stream = useJobExecutionStream(executionId || null);
 const isLive = computed(() => stream.status.value === "open" || stream.status.value === "connecting");
 
-// 刷新执行记录
 function refreshExecution() {
   router.go(0);
 }
 </script>
 
 <template>
-  <div class="page-container execution-detail-page">
+  <div class="page-shell">
     <PageHeader
       :title="execution ? `执行记录 #${execution.id}` : '执行记录详情'"
-      icon-bg="linear-gradient(135deg, rgba(20,184,166,0.16), rgba(45,212,191,0.16))"
+      icon-bg="linear-gradient(135deg, rgba(10,132,255,0.12), rgba(10,132,255,0.06))"
       icon-color="var(--icon-purple)"
       :back-to="to.jobs.executions()"
       back-label="返回执行列表"
@@ -36,15 +35,15 @@ function refreshExecution() {
       <template #icon><icon-thunderbolt /></template>
       <template #subtitle>
         <template v-if="execution">
-          <code class="key-badge">{{ execution.definition_name }}</code>
-          <span class="separator">·</span>
-          <code class="plugin-badge">{{ execution.plugin_key }}</code>
-          <span class="separator">:</span>
-          <span class="action-tag">{{ execution.action }}</span>
+          <code class="inline-flex items-center rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-xs font-mono text-slate-600">{{ execution.definition_name }}</code>
+          <span class="mx-1.5 text-slate-400">·</span>
+          <code class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-mono font-semibold text-slate-700 border-slate-200 bg-white/[64%]">{{ execution.plugin_key }}</code>
+          <span class="mx-1.5 text-slate-400">:</span>
+          <span class="inline-flex items-center rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-xs font-mono text-slate-600">{{ execution.action }}</span>
         </template>
       </template>
       <template #actions>
-        <div v-if="execution" class="execution-header-actions">
+        <div v-if="execution" class="flex flex-wrap items-center justify-end gap-2">
           <ui-button @click="refreshExecution">
             <template #icon><icon-refresh /></template>
             刷新
@@ -56,9 +55,13 @@ function refreshExecution() {
       </template>
     </PageHeader>
 
-    <!-- 未找到记录 -->
-    <div v-if="loading" class="empty-card center-card-loading"><ui-spin :size="36" /></div>
-    <ui-card v-else-if="!execution" class="empty-card">
+    <!-- Loading -->
+    <div v-if="loading" class="empty-state-block">
+      <ui-spin size="2.25em" />
+    </div>
+
+    <!-- Not found -->
+    <ui-card v-else-if="!execution" class="empty-state-block">
       <ui-empty description="未找到该执行记录">
         <ui-button type="primary" @click="router.push(to.jobs.executions())">
           返回执行列表
@@ -66,84 +69,79 @@ function refreshExecution() {
       </ui-empty>
     </ui-card>
 
-    <!-- 内容区域 -->
-    <div v-else class="content-grid">
-      <!-- 左侧：详情面板 -->
-      <div class="detail-panel">
-        <ui-card class="detail-card">
+    <!-- Content -->
+    <div v-else class="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,_1.15fr)_minmax(16em,_0.85fr)]">
+      <!-- Left: detail panel -->
+      <div class="min-w-0">
+        <ui-card class="min-w-0">
           <template #title>
-            <div class="card-title-row">
-              <icon-info-circle class="card-title-icon" />
+            <div class="flex items-center gap-2">
+              <icon-info-circle class="h-4.5 w-4.5 text-[var(--accent)]" />
               <span>执行信息</span>
             </div>
           </template>
 
-          <div class="info-rows">
-            <div class="info-row">
-              <span class="info-label">执行状态</span>
+          <div class="flex flex-col divide-y divide-slate-100">
+            <div class="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0 max-md:flex-col">
+              <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400 min-w-20">执行状态</span>
               <StatusTag :status="execution.status" />
             </div>
 
-            <div class="info-row">
-              <span class="info-label">任务名称</span>
-              <span class="info-value">{{ execution.definition_name }}</span>
+            <div class="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0 max-md:flex-col">
+              <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400 min-w-20">任务名称</span>
+              <span class="text-sm font-medium text-slate-900">{{ execution.definition_name }}</span>
             </div>
 
-            <div class="info-row">
-              <span class="info-label">插件</span>
-              <code class="info-value plugin-badge">{{ execution.plugin_key }}</code>
+            <div class="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0 max-md:flex-col">
+              <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400 min-w-20">插件</span>
+              <code class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-mono font-semibold text-slate-700 border-slate-200 bg-slate-50">{{ execution.plugin_key }}</code>
             </div>
 
-            <div class="info-row">
-              <span class="info-label">动作</span>
-              <span class="info-value action-badge">{{ execution.action }}</span>
+            <div class="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0 max-md:flex-col">
+              <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400 min-w-20">动作</span>
+              <span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700">{{ execution.action }}</span>
             </div>
 
-            <div class="info-row">
-              <span class="info-label">执行节点</span>
-              <code v-if="execution.worker_id" class="info-value worker-badge">
+            <div class="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0 max-md:flex-col">
+              <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400 min-w-20">执行节点</span>
+              <code v-if="execution.worker_id" class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-mono font-semibold text-sky-700 border-slate-200 bg-slate-50">
                 {{ execution.worker_id }}
               </code>
-              <span v-else class="info-value text-muted">未分配</span>
+              <span v-else class="text-sm text-slate-400">未分配</span>
             </div>
 
-            <div class="info-row" v-if="execution.input">
-              <span class="info-label">输入参数</span>
-              <div class="info-value info-value--full">
-                <div class="json-box">
-                  <pre>{{ JSON.stringify(execution.input, null, 2) }}</pre>
-                </div>
+            <div v-if="execution.input" class="flex flex-col gap-3 py-3 first:pt-0 last:pb-0">
+              <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">输入参数</span>
+              <div class="overflow-auto rounded-xl border border-slate-200 bg-slate-950 shadow-sm">
+                <pre class="m-0 whitespace-pre-wrap break-all p-4 text-xs leading-6 text-slate-300">{{ JSON.stringify(execution.input, null, 2) }}</pre>
               </div>
             </div>
           </div>
         </ui-card>
       </div>
 
-      <!-- 右侧：日志终端 -->
-      <div class="log-panel">
-        <ui-card class="log-card">
+      <!-- Right: log terminal -->
+      <div class="min-w-0">
+        <ui-card class="min-w-0">
           <template #title>
-            <div class="log-title-row">
-              <div class="card-title-row">
-                <icon-code-block class="card-title-icon" />
+            <div class="flex items-center justify-between gap-3">
+              <div class="flex items-center gap-2">
+                <icon-code-block class="h-4.5 w-4.5 text-[var(--accent)]" />
                 <span>实时日志</span>
               </div>
-              <div class="stream-indicator" :class="{ live: isLive }">
-                <span class="stream-dot" />
+              <div class="flex items-center gap-1.5 text-xs font-medium" :class="isLive ? 'text-green-600' : 'text-slate-400'">
+                <span class="h-2 w-2 rounded-full" :class="isLive ? 'bg-green-500 animate-pulse' : 'bg-slate-300'" />
                 {{ isLive ? "实时连接" : "离线缓冲" }}
               </div>
             </div>
           </template>
 
-          <div class="log-body">
-            <LogTerminal
-              :logs="stream.lines.value"
-              :is-live="isLive"
-              :show-header="false"
-              empty-label="等待事件流…"
-              height-class="h-full"
-            />
-          </div>
+          <LogTerminal
+            :logs="stream.lines.value"
+            :is-live="isLive"
+            :show-header="false"
+            empty-label="等待事件流…"
+          />
         </ui-card>
       </div>
     </div>

@@ -1,8 +1,9 @@
-import { ref, onMounted, onUnmounted, computed, unref, type Ref } from "vue";
+import { ref, onMounted, computed, unref, type Ref } from "vue";
 import { storeToRefs } from "pinia";
 import { getJobExecutionEventsUrl } from "@/api";
 import { useJobsStore } from "@/store";
 import type { JobDefinitionCreateInput } from "@/types";
+import { useAutoRefresh } from "./useAutoRefresh";
 import { useEventStream } from "./useEventStream";
 
 export function useJobDefinitions() {
@@ -26,14 +27,11 @@ export function useJobExecutions() {
     await store.fetchJobExecutions();
   }
 
-  let timer: ReturnType<typeof setInterval> | null = null;
-  onMounted(() => {
-    void refresh();
-    timer = setInterval(() => void refresh(), 5000);
+  const autoRefresh = useAutoRefresh(refresh, {
+    intervalMs: 10000,
   });
-  onUnmounted(() => { if (timer) clearInterval(timer); });
 
-  return { data: jobExecutions, loading: loadingExecutions, error, refresh };
+  return { data: jobExecutions, loading: loadingExecutions, error, refresh: autoRefresh.refresh };
 }
 
 export function useCreateJobDefinition() {

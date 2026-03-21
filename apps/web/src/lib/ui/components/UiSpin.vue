@@ -10,17 +10,19 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   loading: true,
-  size: 24,
+  size: "1.5em",
   tip: "",
 });
 
 const slots = useSlots();
 const attrs = useAttrs();
 const hasSlot = computed(() => Boolean(slots.default));
+const normalizeSize = (value: number | string) =>
+  typeof value === "number" ? `${value / 16}em` : String(value);
 
 const spinnerStyle = computed(() => ({
-  width: typeof props.size === "number" ? `${props.size}px` : String(props.size),
-  height: typeof props.size === "number" ? `${props.size}px` : String(props.size),
+  inlineSize: normalizeSize(props.size),
+  blockSize: normalizeSize(props.size),
 }));
 </script>
 
@@ -33,7 +35,7 @@ const spinnerStyle = computed(() => ({
       class="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-white/70 backdrop-blur-[1px]"
     >
       <span
-        class="ui-spin-icon inline-block animate-spin rounded-full border-2 border-slate-300 border-t-teal-600"
+        class="ui-spin-icon inline-block animate-spin rounded-full border-2 border-slate-200 border-t-[var(--accent)]"
         :style="spinnerStyle"
       />
       <span v-if="tip" class="text-xs text-slate-500">{{ tip }}</span>
@@ -47,7 +49,7 @@ const spinnerStyle = computed(() => ({
     :class="cx('ui-spin inline-flex items-center gap-2', attrs.class as string)"
   >
     <span
-      class="ui-spin-icon inline-block animate-spin rounded-full border-2 border-slate-300 border-t-teal-600"
+      class="ui-spin-icon inline-block animate-spin rounded-full border-2 border-slate-200 border-t-[var(--accent)]"
       :style="spinnerStyle"
     />
     <span v-if="tip" class="text-xs text-slate-500">{{ tip }}</span>

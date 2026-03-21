@@ -11,24 +11,24 @@ const { data: agent, loading } = useAgent(agentId);
 </script>
 
 <template>
-  <div class="page-container form-page">
+  <div class="page-shell">
     <PageHeader
-      title="修改 Agent"
+      title="编辑 Agent"
       :subtitle="agent ? `正在编辑 ${agent.name}` : ''"
-      icon-bg="linear-gradient(135deg, rgba(20,184,166,0.16), rgba(45,212,191,0.16))"
+      icon-bg="linear-gradient(135deg, rgba(10,132,255,0.12), rgba(10,132,255,0.06))"
       icon-color="var(--icon-purple)"
       :back-to="to.agents.detail(agentId)"
-      back-label="返回 Agent"
+      back-label="返回 Agent 详情"
     >
       <template #icon><icon-robot /></template>
     </PageHeader>
 
-    <div v-if="loading" class="center-empty"><ui-spin :size="36" /></div>
-    <div v-else-if="!agent" class="center-empty"><p class="muted-copy">未找到该 Agent。</p></div>
+    <div v-if="loading" class="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed px-6 py-16 text-center border-slate-200 bg-white/[56%] shadow-sm"><ui-spin size="2.25em" /></div>
+    <div v-else-if="!agent" class="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed px-6 py-16 text-center border-slate-200 bg-white/[56%] shadow-sm"><p class="text-sm leading-6 text-slate-500">未找到该 Agent。</p></div>
     <ui-card v-else>
-      <div class="inline-info-notice">
-        <icon-info-circle class="inline-info-notice-icon" />
-        <p class="inline-info-notice-body">暂不支持通过 UI 修改 Agent 配置。请删除后重新创建，或通过 API 修改。</p>
+      <div class="flex items-start gap-3 rounded-xl border border-sky-200 bg-sky-50/70 p-4">
+        <icon-info-circle class="mt-0.5 h-4 w-4 flex-shrink-0 text-sky-600" />
+        <p class="text-sm leading-6 text-slate-700">暂不支持通过 UI 编辑 Agent 配置。请删除后重新创建，或通过 API 更新。</p>
       </div>
     </ui-card>
   </div>

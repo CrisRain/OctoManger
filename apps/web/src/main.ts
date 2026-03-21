@@ -2,7 +2,7 @@ import { createApp } from "vue";
 import { createPinia } from "pinia";
 import { installUiComponents } from "./lib/ui";
 import { installIcons } from "./lib/icons";
-import "./styles/index.scss";
+import "./styles/tailwind.css";
 import App from "./App.vue";
 import { router } from "./router";
 

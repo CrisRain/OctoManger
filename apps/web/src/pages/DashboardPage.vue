@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import { computed } from "vue";
-import { useRouter } from "vue-router";
 import {
   IconApps, IconLayers, IconUser, IconEmail,
   IconSchedule, IconHistory, IconRobot, IconRefresh, IconLoading,
@@ -8,13 +6,14 @@ import {
 } from "@/lib/icons";
 
 import { useSystemStatus, useDashboardSnapshot } from "@/composables/useDashboard";
-import { PageHeader, QuickActionsPanel } from "@/components/index";
+import { useCommandPaletteStore } from "@/store/command-palette";
 import { to } from "@/router/registry";
 import type { DashboardSummary } from "@/composables/useDashboard";
 
 const router = useRouter();
 const systemStatus = useSystemStatus();
 const snapshot = useDashboardSnapshot();
+const commandPalette = useCommandPaletteStore();
 
 // 统计卡片配置
 interface StatCard {
@@ -31,7 +30,7 @@ const statCards: StatCard[] = [
     label: "插件",
     valueKey: "pluginCount",
     icon: IconApps,
-    gradientBg: "linear-gradient(135deg, rgba(20,184,166,0.12) 0%, rgba(45,212,191,0.12) 100%)",
+    gradientBg: "rgba(20, 184, 166, 0.1)",
     iconColor: "#14b8a6",
     path: to.plugins.list()
   },
@@ -39,15 +38,15 @@ const statCards: StatCard[] = [
     label: "账号类型",
     valueKey: "accountTypeCount",
     icon: IconLayers,
-    gradientBg: "linear-gradient(135deg, rgba(2,132,199,0.1) 0%, rgba(14,165,233,0.1) 100%)",
+    gradientBg: "rgba(2, 132, 199, 0.1)",
     iconColor: "#0284c7",
     path: to.accountTypes.list()
   },
   {
-    label: "通用账号",
+    label: "账号",
     valueKey: "accountCount",
     icon: IconUser,
-    gradientBg: "linear-gradient(135deg, rgba(22,163,74,0.1) 0%, rgba(34,197,94,0.1) 100%)",
+    gradientBg: "rgba(22, 163, 74, 0.1)",
     iconColor: "#16a34a",
     path: to.accounts.list()
   },
@@ -55,7 +54,7 @@ const statCards: StatCard[] = [
     label: "邮箱账号",
     valueKey: "emailAccountCount",
     icon: IconEmail,
-    gradientBg: "linear-gradient(135deg, rgba(234,88,12,0.1) 0%, rgba(249,115,22,0.1) 100%)",
+    gradientBg: "rgba(234, 88, 12, 0.1)",
     iconColor: "#ea580c",
     path: to.emailAccounts.list()
   },
@@ -63,7 +62,7 @@ const statCards: StatCard[] = [
     label: "任务定义",
     valueKey: "jobDefinitionCount",
     icon: IconSchedule,
-    gradientBg: "linear-gradient(135deg, rgba(202,138,4,0.1) 0%, rgba(234,179,8,0.1) 100%)",
+    gradientBg: "rgba(202, 138, 4, 0.1)",
     iconColor: "#ca8a04",
     path: to.jobs.list()
   },
@@ -71,15 +70,15 @@ const statCards: StatCard[] = [
     label: "执行总数",
     valueKey: "jobExecutionCount",
     icon: IconHistory,
-    gradientBg: "linear-gradient(135deg, rgba(225,29,72,0.1) 0%, rgba(244,63,94,0.1) 100%)",
+    gradientBg: "rgba(225, 29, 72, 0.1)",
     iconColor: "#e11d48",
     path: to.jobs.executions()
   },
   {
-    label: "后台任务",
+    label: "Agent",
     valueKey: "agentCount",
     icon: IconRobot,
-    gradientBg: "linear-gradient(135deg, rgba(14,165,233,0.12) 0%, rgba(56,189,248,0.12) 100%)",
+    gradientBg: "rgba(14, 165, 233, 0.1)",
     iconColor: "#0ea5e9",
     path: to.agents.list()
   },
@@ -99,6 +98,10 @@ function statusColor(status: string): string {
   return executionStatusColor[status] ?? "gray";
 }
 
+function executionIcon(status: string) {
+  return status === "running" ? IconLoading : IconHistory;
+}
+
 // 快速操作配置
 interface QuickAction {
   id: string;
@@ -110,29 +113,14 @@ interface QuickAction {
 }
 
 const quickActions: QuickAction[] = [
-  { id: "add-account", label: "添加账号", description: "创建新的通用账号", icon: IconUser, color: "blue", path: to.accounts.create() },
-  { id: "add-email", label: "新建邮箱", description: "配置邮箱账号", icon: IconEmail, color: "orange", path: to.emailAccounts.create() },
-  { id: "create-job", label: "创建任务", description: "新建定时任务", icon: IconThunderbolt, color: "teal", path: to.jobs.create() },
-  { id: "create-agent", label: "创建Agent", description: "启动后台任务", icon: IconRobot, color: "cyan", path: to.agents.create() },
-];
-
-// 最近使用（模拟数据，实际应该从后端获取）
-interface RecentItem {
-  id: string;
-  name: string;
-  type: "account" | "job" | "agent" | "email";
-  path: string;
-  updatedAt: string;
-}
-
-const recentItems: RecentItem[] = [
-  { id: "1", name: "GitHub 账号", type: "account", path: to.accounts.detail(1), updatedAt: "5分钟前" },
-  { id: "2", name: "每日备份任务", type: "job", path: to.jobs.detail(1), updatedAt: "1小时前" },
-  { id: "3", name: "邮件监控", type: "agent", path: to.agents.detail(1), updatedAt: "2小时前" },
+  { id: "add-account", label: "创建账号", description: "创建新的账号", icon: IconUser, color: "blue", path: to.accounts.create() },
+  { id: "add-email", label: "创建邮箱账号", description: "创建新的邮箱账号", icon: IconEmail, color: "orange", path: to.emailAccounts.create() },
+  { id: "create-job", label: "创建任务", description: "创建新的任务", icon: IconThunderbolt, color: "teal", path: to.jobs.create() },
+  { id: "create-agent", label: "创建 Agent", description: "创建新的 Agent", icon: IconRobot, color: "cyan", path: to.agents.create() },
 ];
 
 function openCommandPalette() {
-  window.dispatchEvent(new CustomEvent("command-palette:open"));
+  commandPalette.open();
 }
 
 function refreshDashboard() {
@@ -144,8 +132,8 @@ function refreshDashboard() {
 </script>
 
 <template>
-  <div class="page-container dashboard-page">
-    <PageHeader title="控制台" subtitle="系统概览与快捷操作中心">
+  <div class="page-shell">
+    <PageHeader title="控制台" subtitle="查看系统概览并快速访问常用操作">
       <template #actions>
         <ui-button type="secondary" @click="refreshDashboard">
           <template #icon><icon-refresh /></template>
@@ -156,61 +144,61 @@ function refreshDashboard() {
 
     <!-- 系统状态横幅 -->
     <div
-      class="dashboard__status"
-      :class="systemStatus.data.value?.database_ok ? 'status-banner--ok' : 'status-banner--err'"
+      class="mb-6 flex items-center gap-3 rounded-xl border px-5 py-4 text-sm"
+      :class="systemStatus.data.value?.database_ok ? 'border-emerald-200 bg-emerald-50/90 text-emerald-800' : 'border-red-200 bg-red-50/90 text-red-700'"
     >
       <span
-        class="status-dot status-dot--banner dashboard__status-dot"
-        :class="systemStatus.data.value?.database_ok ? 'online' : 'offline'"
+        class="inline-block h-2.5 w-2.5 flex-shrink-0 rounded-full"
+        :class="systemStatus.data.value?.database_ok
+          ? 'bg-emerald-500 animate-pulse'
+          : 'bg-red-500'"
       />
-      <div class="dashboard__status-content">
-        <span class="dashboard__status-text">
+      <div class="flex flex-1 items-center gap-2 max-md:flex-col max-md:items-start max-md:gap-1.5">
+        <span class="font-semibold">
           {{ systemStatus.data.value?.database_ok ? '系统运行正常' : '系统异常，请检查服务状态' }}
         </span>
-        <span v-if="systemStatus.data.value?.database_ok" class="dashboard__status-time">
+        <span v-if="systemStatus.data.value?.database_ok" class="text-xs opacity-70">
           最后检测：{{ new Date(systemStatus.data.value.now).toLocaleString("zh-CN") }}
         </span>
       </div>
     </div>
 
     <!-- 统计卡片 - 可点击跳转 -->
-    <div class="dashboard__stats">
+    <div class="mb-7 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
       <button
         type="button"
         v-for="card in statCards"
         :key="card.label"
-        class="dashboard__stat-card"
-        :class="[
-          {
-            'dashboard__stat-card--clickable': !!card.path,
-          },
-        ]"
+        class="group relative flex flex-col items-center gap-2 rounded-xl border border-slate-200 bg-white p-5 text-center shadow-sm transition-all duration-200"
+        :class="card.path ? 'cursor-pointer hover:border-slate-300 hover:shadow-md hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/20' : 'cursor-default'"
         @click="card.path && router.push(card.path)"
       >
-        <div class="dashboard__stat-icon" :style="{ background: card.gradientBg, color: card.iconColor }">
-          <component :is="card.icon" class="dashboard__stat-icon-svg" />
+        <div
+          class="mb-1 flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl transition-transform duration-200 group-hover:scale-110"
+          :style="{ background: card.gradientBg, color: card.iconColor }"
+        >
+          <component :is="card.icon" class="h-5 w-5" />
         </div>
-        <div class="dashboard__stat-value">
+        <div class="text-[28px] font-semibold leading-none tracking-tighter text-slate-900">
           {{ (snapshot.data.value?.[card.valueKey] as number) ?? 0 }}
         </div>
-        <div class="dashboard__stat-label">{{ card.label }}</div>
-        <icon-arrow-right v-if="card.path" class="dashboard__stat-arrow" />
+        <div class="text-xs font-medium text-slate-500">{{ card.label }}</div>
+        <icon-arrow-right v-if="card.path" class="absolute right-2.5 top-2.5 h-3.5 w-3.5 text-slate-300 transition-colors group-hover:text-slate-500" />
       </button>
     </div>
 
-    <div class="dashboard__content">
+    <div class="grid grid-cols-1 gap-6 lg:grid-cols-[2fr_3fr]">
       <!-- 左侧：快捷操作面板 -->
       <QuickActionsPanel
         :actions="quickActions"
-        :recent-items="recentItems"
         @open-search="openCommandPalette"
       />
 
       <!-- 右侧：最近执行记录 -->
-      <ui-card class="recent-card">
+      <ui-card class="min-w-0">
         <template #title>
-          <div class="dashboard__card-title">
-            <icon-history class="dashboard__card-title-icon" />
+          <div class="flex items-center gap-2">
+            <icon-history class="h-4 w-4 text-[var(--accent)]" />
             <span>最近执行</span>
           </div>
         </template>
@@ -220,34 +208,48 @@ function refreshDashboard() {
           description="暂无执行记录"
         />
 
-        <div v-else class="dashboard__executions">
+        <div v-else class="flex flex-col gap-3">
           <button
             type="button"
             v-for="record in snapshot.data.value?.recentExecutions ?? []"
             :key="record.id"
-            class="dashboard__execution-item"
+            class="flex w-full items-center gap-3.5 rounded-xl border border-slate-200 bg-white px-3.5 py-3.5 text-left transition-all hover:bg-slate-50 hover:border-slate-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/20"
             @click="router.push(to.jobs.executionDetail(record.id))"
           >
-            <ui-tag
-              :color="statusColor(record.status)"
-              size="small"
-              class="dashboard__execution-status"
+            <div
+              class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border shadow-sm"
+              :class="{
+                'border-slate-200 bg-slate-50 text-slate-500': ['pending', 'cancelled'].includes(record.status) || !['pending', 'running', 'done', 'success', 'failed', 'cancelled'].includes(record.status),
+                'border-blue-200 bg-blue-50 text-blue-600': record.status === 'running',
+                'border-emerald-200 bg-emerald-50 text-emerald-600': ['done', 'success'].includes(record.status),
+                'border-red-200 bg-red-50 text-red-600': record.status === 'failed'
+              }"
             >
-              <template #icon v-if="record.status === 'running'">
-                <icon-loading />
-              </template>
-              {{ record.status }}
-            </ui-tag>
-            <div class="dashboard__execution-name">{{ record.definition_name }}</div>
-            <div class="dashboard__execution-detail">
-              <span class="dashboard__execution-plugin">{{ record.plugin_key }}</span>
-              <span class="dashboard__execution-dot">·</span>
-              <span class="execution-action">{{ record.action }}</span>
+              <component :is="executionIcon(record.status)" />
             </div>
-            <div class="dashboard__execution-time">
-              {{ record.worker_id || "自动分配" }}
+
+            <div class="min-w-0 flex-1">
+              <div class="mb-2 flex items-center gap-2 justify-between">
+                <div class="min-w-0 truncate text-sm font-medium text-slate-900">{{ record.definition_name }}</div>
+                <ui-tag
+                  :color="statusColor(record.status)"
+                  size="small"
+                  class="flex-shrink-0"
+                >
+                  {{ record.status }}
+                </ui-tag>
+              </div>
+
+              <div class="flex flex-wrap items-center gap-1 text-sm text-slate-500">
+                <span class="font-medium">{{ record.plugin_key }}</span>
+                <span class="text-slate-400">·</span>
+                <span class="truncate">{{ record.action }}</span>
+                <span class="text-slate-400">·</span>
+                <span class="truncate">{{ record.worker_id || "自动分配" }}</span>
+              </div>
             </div>
-            <icon-arrow-right class="dashboard__execution-arrow" />
+
+            <icon-arrow-right class="h-4 w-4 flex-shrink-0 text-slate-400" />
           </button>
         </div>
       </ui-card>

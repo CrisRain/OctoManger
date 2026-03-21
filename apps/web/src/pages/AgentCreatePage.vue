@@ -36,7 +36,7 @@ const formFields: FieldConfig[] = [
     type: "text",
     placeholder: "例如: GitHub Watcher",
     required: true,
-    description: "用于标识此后台任务的名称",
+    description: "用于标识此 Agent 的名称",
   },
   {
     name: "plugin_key",
@@ -110,7 +110,7 @@ async function handleSubmit() {
       message.success("Agent 已创建");
       router.push(to.agents.list());
     },
-    { action: "创建Agent", showSuccess: true }
+    { action: "创建 Agent", showSuccess: true }
   );
 }
 
@@ -121,24 +121,24 @@ function handleCancel() {
 </script>
 
 <template>
-  <div class="page-container agent-create-page">
+  <div class="page-shell agent-create-page">
     <PageHeader
-      title="创建后台任务"
-      subtitle="配置一个新的长期运行的插件任务"
-      icon-bg="linear-gradient(135deg, rgba(20,184,166,0.16), rgba(45,212,191,0.16))"
+      title="创建 Agent"
+      subtitle="创建一个持续运行的 Agent"
+      icon-bg="linear-gradient(135deg, rgba(10,132,255,0.12), rgba(10,132,255,0.06))"
       icon-color="var(--icon-purple)"
       :back-to="to.agents.list()"
-      back-label="返回后台任务"
+      back-label="返回 Agent 列表"
     >
       <template #icon><icon-robot /></template>
     </PageHeader>
 
-    <div class="form-layout">
+    <div class="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,_1.45fr)_minmax(16em,_0.85fr)]">
       <!-- 表单卡片 -->
-      <ui-card class="form-card">
+      <ui-card class="min-w-0">
         <template #title>
-          <div class="card-title-row">
-            <icon-robot class="card-title-icon" />
+          <div class="flex items-center gap-2">
+            <icon-robot class="h-5 w-5 text-[var(--accent)]" />
             <span>基本信息</span>
           </div>
         </template>
@@ -151,46 +151,54 @@ function handleCancel() {
       </ui-card>
 
       <!-- 说明卡片 -->
-      <ui-card class="info-card">
+      <ui-card class="min-w-0 lg:sticky lg:top-[var(--space-6)]">
         <template #title>
-          <div class="card-title-row">
-            <icon-info-circle class="card-title-icon" />
-            <span>关于后台任务</span>
+          <div class="flex items-center gap-2">
+            <icon-info-circle class="h-5 w-5 text-[var(--accent)]" />
+            <span>关于 Agent</span>
           </div>
         </template>
 
-        <div class="info-content">
-          <h4 class="info-title">什么是后台任务 (Agent)?</h4>
-          <p class="info-text">
-            后台任务是长期运行的插件进程，可以持续执行特定任务，如监控数据变化、定期同步信息等。
+        <div class="flex flex-col gap-4">
+          <h4 class="text-sm font-semibold text-slate-900">什么是 Agent？</h4>
+          <p class="text-sm leading-6 text-slate-500">
+            Agent 是持续运行的插件进程，可以持续执行特定任务，例如监控数据变化、定期同步信息等。
           </p>
 
-          <h4 class="info-title">任务生命周期</h4>
-          <div class="lifecycle">
-            <div class="lifecycle-step">
-              <span class="step-dot"></span>
-              <div class="step-title">已停止 (stopped)</div>
-              <div class="step-desc">任务创建后的初始状态</div>
+          <h4 class="text-sm font-semibold text-slate-900">任务生命周期</h4>
+          <div class="flex flex-col gap-3">
+            <div class="flex items-start gap-3 rounded-xl border p-4 border-slate-200 bg-slate-50 shadow-sm">
+              <span class="mt-1.5 h-2.5 w-2.5 flex-shrink-0 rounded-full bg-slate-300"></span>
+              <div class="flex flex-col gap-0.5">
+                <div class="text-sm font-semibold text-slate-900">已停止 (stopped)</div>
+                <div class="text-xs leading-5 text-slate-500">Agent 创建后的初始状态</div>
+              </div>
             </div>
-            <div class="lifecycle-step">
-              <span class="step-dot step-dot--active"></span>
-              <div class="step-title">运行中 (running)</div>
-              <div class="step-desc">任务正在执行，可以接收事件</div>
+            <div class="flex items-start gap-3 rounded-xl border p-4 border-slate-200 bg-slate-50 shadow-sm">
+              <span class="mt-1.5 h-2.5 w-2.5 flex-shrink-0 rounded-full bg-emerald-500"></span>
+              <div class="flex flex-col gap-0.5">
+                <div class="text-sm font-semibold text-slate-900">运行中 (running)</div>
+                <div class="text-xs leading-5 text-slate-500">Agent 正在运行，可持续接收事件</div>
+              </div>
             </div>
-            <div class="lifecycle-step">
-              <span class="step-dot step-dot--transition"></span>
-              <div class="step-title">停止中 (stopping)</div>
-              <div class="step-desc">正在优雅地停止任务</div>
+            <div class="flex items-start gap-3 rounded-xl border p-4 border-slate-200 bg-slate-50 shadow-sm">
+              <span class="mt-1.5 h-2.5 w-2.5 flex-shrink-0 rounded-full bg-sky-500"></span>
+              <div class="flex flex-col gap-0.5">
+                <div class="text-sm font-semibold text-slate-900">停止中 (stopping)</div>
+                <div class="text-xs leading-5 text-slate-500">正在优雅停止 Agent</div>
+              </div>
             </div>
-            <div class="lifecycle-step">
-              <span class="step-dot step-dot--error"></span>
-              <div class="step-title">错误 (error)</div>
-              <div class="step-desc">任务执行出错，需要检查配置</div>
+            <div class="flex items-start gap-3 rounded-xl border p-4 border-slate-200 bg-slate-50 shadow-sm">
+              <span class="mt-1.5 h-2.5 w-2.5 flex-shrink-0 rounded-full bg-red-500"></span>
+              <div class="flex flex-col gap-0.5">
+                <div class="text-sm font-semibold text-slate-900">错误 (error)</div>
+                <div class="text-xs leading-5 text-slate-500">Agent 运行出错，需要检查配置</div>
+              </div>
             </div>
           </div>
 
-          <h4 class="info-title">使用场景</h4>
-          <ul class="use-cases">
+          <h4 class="text-sm font-semibold text-slate-900">使用场景</h4>
+          <ul class="pl-5 text-sm leading-7 text-slate-600">
             <li>持续监控 GitHub 仓库变化</li>
             <li>定期检查邮箱新邮件</li>
             <li>实时同步服务器状态</li>
@@ -201,7 +209,7 @@ function handleCancel() {
     </div>
 
     <!-- 底部操作栏 -->
-    <div class="form-footer">
+    <div class="flex items-center justify-end gap-3 rounded-xl border px-5 py-4 sticky bottom-[var(--space-4)] z-10 border-slate-200 bg-slate-50 shadow-sm backdrop-blur-xl backdrop-saturate-150 max-md:flex-col max-md:items-stretch max-md:bottom-[var(--space-3)]">
       <ui-button size="large" @click="handleCancel">
         取消
       </ui-button>
@@ -212,7 +220,7 @@ function handleCancel() {
         @click="handleSubmit"
       >
         <template #icon><icon-check /></template>
-        {{ create.loading.value ? "创建中..." : "创建任务" }}
+        {{ create.loading.value ? "创建中…" : "创建 Agent" }}
       </ui-button>
     </div>
   </div>

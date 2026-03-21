@@ -1,11 +1,14 @@
-import { ref, onMounted, onUnmounted, computed, unref, type Ref } from "vue";
+import { ref, computed, unref, type Ref } from "vue";
 import { storeToRefs } from "pinia";
 import { getAgentEventsUrl } from "@/api";
 import { useAgentsStore } from "@/store";
 import type { AgentStatus } from "@/types";
+import { useAutoRefresh, type UseAutoRefreshOptions } from "./useAutoRefresh";
 import { useEventStream } from "./useEventStream";
 
-export function useAgents() {
+interface AgentCollectionRefreshOptions extends UseAutoRefreshOptions {}
+
+export function useAgents(options: AgentCollectionRefreshOptions = {}) {
   const store = useAgentsStore();
   const { agents, loading, error } = storeToRefs(store);
 
@@ -13,17 +16,17 @@ export function useAgents() {
     await store.fetchAgents();
   }
 
-  let timer: ReturnType<typeof setInterval> | null = null;
-  onMounted(() => {
-    void refresh();
-    timer = setInterval(() => void refresh(), 5000);
+  const autoRefresh = useAutoRefresh(refresh, {
+    intervalMs: 10000,
+    ...options,
   });
-  onUnmounted(() => { if (timer) clearInterval(timer); });
 
-  return { data: agents, loading, error, refresh };
+  return { data: agents, loading, error, refresh: autoRefresh.refresh };
 }
 
-export function useAgent(id: number) {
+interface SingleAgentRefreshOptions extends UseAutoRefreshOptions {}
+
+export function useAgent(id: number, options: SingleAgentRefreshOptions = {}) {
   const store = useAgentsStore();
   const { agents, loading, error } = storeToRefs(store);
   const data = computed(() => agents.value.find((a) => a.id === id) ?? null);
@@ -32,14 +35,12 @@ export function useAgent(id: number) {
     await store.fetchAgents();
   }
 
-  let timer: ReturnType<typeof setInterval> | null = null;
-  onMounted(() => {
-    void refresh();
-    timer = setInterval(() => void refresh(), 5000);
+  const autoRefresh = useAutoRefresh(refresh, {
+    intervalMs: null,
+    ...options,
   });
-  onUnmounted(() => { if (timer) clearInterval(timer); });
 
-  return { data, loading, error, refresh };
+  return { data, loading, error, refresh: autoRefresh.refresh };
 }
 
 export function useCreateAgent() {
@@ -107,9 +108,6 @@ export function useStopAgent() {
 }
 
 // ── useAgentStatus ────────────────────────────────────────────────────────────
-// Polls GET /agents/:id/status every 3 s. This endpoint is served from the
-// Redis cache (TTL 5 s) written by the worker on every state transition,
-// so it never hits the DB on the hot path.
 export function useAgentStatus(agentId: number) {
   const data = ref<AgentStatus | null>(null);
   const error = ref<string | null>(null);
@@ -120,29 +118,53 @@ export function useAgentStatus(agentId: number) {
       data.value = await store.fetchStatus(agentId);
       error.value = null;
     } catch (e) {
-      // status polling is always silent — don't surface transient errors
+      error.value = e instanceof Error ? e.message : "请求失败";
     }
   }
 
-  let timer: ReturnType<typeof setInterval> | null = null;
-  onMounted(() => {
-    void refresh();
-    timer = setInterval(() => void refresh(), 3000);
+  const autoRefresh = useAutoRefresh(refresh, {
+    intervalMs: 30000,
   });
-  onUnmounted(() => { if (timer) clearInterval(timer); });
 
-  return { data, error, refresh };
+  return { data, error, refresh: autoRefresh.refresh };
 }
 
 export interface AgentStreamState {
-  runtime_state?: string;
-  desired_state?: string;
-  last_error?: string;
+  runtimeState: string | null;
+  desiredState: string | null;
+  lastError: string;
+  lastHeartbeatAt: string | null;
+  updatedAt: string | null;
 }
 
 type MaybeRef<T> = T | Ref<T>;
 
 const agentEventNames = ["heartbeat", "log", "progress", "error"];
+
+function readAgentStreamState(payload: unknown): AgentStreamState | null {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  const raw = payload as Record<string, unknown>;
+  const runtimeState = typeof raw.runtime_state === "string" ? raw.runtime_state : null;
+  const desiredState = typeof raw.desired_state === "string" ? raw.desired_state : null;
+  const lastHeartbeatAt = typeof raw.last_heartbeat_at === "string" ? raw.last_heartbeat_at : null;
+  const updatedAt = typeof raw.updated_at === "string" ? raw.updated_at : null;
+  const lastError = typeof raw.last_error === "string" ? raw.last_error : "";
+
+  if (!runtimeState && !desiredState && !lastHeartbeatAt && !updatedAt && !lastError) {
+    return null;
+  }
+
+  return {
+    runtimeState,
+    desiredState,
+    lastError,
+    lastHeartbeatAt,
+    updatedAt,
+  };
+}
 
 export function useAgentEventStream(agentId: MaybeRef<number | null>) {
   const streamUrl = computed(() => {
@@ -154,99 +176,58 @@ export function useAgentEventStream(agentId: MaybeRef<number | null>) {
     eventNames: agentEventNames,
   });
 
+  const statusSnapshot = computed(() => readAgentStreamState(stream.heartbeatPayload.value));
   const runtimeState = computed(() => {
-    const payload = stream.heartbeatPayload.value as { runtime_state?: string } | null;
-    return payload?.runtime_state ?? null;
+    return statusSnapshot.value?.runtimeState ?? null;
+  });
+  const desiredState = computed(() => {
+    return statusSnapshot.value?.desiredState ?? null;
+  });
+  const lastError = computed(() => {
+    return statusSnapshot.value?.lastError ?? "";
+  });
+  const statusLastHeartbeatAt = computed(() => {
+    return statusSnapshot.value?.lastHeartbeatAt ?? null;
+  });
+  const updatedAt = computed(() => {
+    return statusSnapshot.value?.updatedAt ?? null;
+  });
+  const connected = computed(() => {
+    return stream.status.value === "open" || stream.status.value === "connecting";
   });
 
   const isRunning = computed(() => {
     if (runtimeState.value) {
       return runtimeState.value === "running" || runtimeState.value === "idle";
     }
-    return stream.status.value === "open" || stream.status.value === "connecting";
+    return connected.value;
   });
 
   return {
     ...stream,
+    connected,
+    statusSnapshot,
     runtimeState,
+    desiredState,
+    lastError,
+    statusLastHeartbeatAt,
+    updatedAt,
     isRunning,
   };
 }
 
 export function useAgentStream(agentId: number | null) {
-  const streamUrl = computed(() =>
-    agentId ? getAgentEventsUrl(agentId) : null
-  );
+  const stream = useAgentEventStream(agentId);
 
-  const logLines = ref<string[]>([]);
-  const connected = ref(false);
-  const lastHeartbeatAt = ref<number | null>(null);
-  const runtimeState = ref<string | null>(null);
-
-  let source: EventSource | null = null;
-
-  function cleanup() {
-    if (source) {
-      source.close();
-      source = null;
-    }
-    connected.value = false;
-  }
-
-  function connect(url: string) {
-    cleanup();
-    logLines.value = [];
-
-    const es = new EventSource(url);
-    source = es;
-
-    es.onopen = () => { connected.value = true; };
-    es.onerror = () => {
-      if (es.readyState === EventSource.CLOSED) {
-        connected.value = false;
-        return;
-      }
-      if (es.readyState === EventSource.CONNECTING) {
-        // Keep UI in live mode while EventSource reconnects automatically.
-        connected.value = true;
-        return;
-      }
-      // Ignore SSE payloads using event type "error" (business-level errors).
-      connected.value = true;
-    };
-
-    const onLog = (e: Event) => {
-      logLines.value = [...logLines.value, (e as MessageEvent<string>).data].slice(-200);
-    };
-    const onProgress = (e: Event) => {
-      logLines.value = [...logLines.value, (e as MessageEvent<string>).data].slice(-200);
-    };
-    const onError = (e: Event) => {
-      logLines.value = [...logLines.value, (e as MessageEvent<string>).data].slice(-200);
-    };
-    const onHeartbeat = (e: Event) => {
-      connected.value = true;
-      lastHeartbeatAt.value = Date.now();
-      try {
-        const payload = JSON.parse((e as MessageEvent<string>).data ?? "{}") as { runtime_state?: string };
-        runtimeState.value = payload.runtime_state ?? null;
-      } catch {
-        // ignore malformed heartbeat payloads
-      }
-    };
-
-    es.addEventListener("log", onLog);
-    es.addEventListener("progress", onProgress);
-    es.addEventListener("error", onError);
-    es.addEventListener("heartbeat", onHeartbeat);
-    // "state" events are intentionally ignored — status comes from useAgentStatus
-  }
-
-  onMounted(() => {
-    if (streamUrl.value) connect(streamUrl.value);
-  });
-
-  onUnmounted(cleanup);
-
-  return { lines: logLines, connected, lastHeartbeatAt, runtimeState };
+  return {
+    lines: stream.lines,
+    connected: stream.connected,
+    receivedHeartbeatAt: stream.lastHeartbeatAt,
+    runtimeState: stream.runtimeState,
+    desiredState: stream.desiredState,
+    lastError: stream.lastError,
+    statusSnapshot: stream.statusSnapshot,
+    statusLastHeartbeatAt: stream.statusLastHeartbeatAt,
+    updatedAt: stream.updatedAt,
+  };
 }

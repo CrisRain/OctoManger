@@ -65,19 +65,24 @@ function handleAction() {
 </script>
 
 <template>
-  <div class="empty-state" :class="{ 'empty-state--loading': isLoading }">
-    <div class="empty-state-icon" :class="`empty-state-icon--${type}`">
-      <component :is="displayIcon" :class="{ 'animate-spin': isLoading }" />
+  <div class="flex flex-col items-center gap-4 px-6 py-16 text-center" :class="{ 'py-12': isLoading }">
+    <div class="flex h-14 w-14 items-center justify-center rounded-xl border border-slate-200 bg-white shadow-sm" :class="{
+      'text-slate-400': type === 'empty',
+      'text-red-500 border-red-100 bg-red-50/50': type === 'error',
+      'text-emerald-500 border-emerald-100 bg-emerald-50/50': type === 'success',
+      'text-blue-500 border-blue-100 bg-blue-50/50': type === 'loading',
+    }">
+      <component :is="displayIcon" class="h-6 w-6" :class="{ 'animate-spin': isLoading }" />
     </div>
-    <div class="empty-state-content">
-      <h3 class="empty-state-title">{{ displayTitle }}</h3>
+    <div class="flex flex-col gap-1.5">
+      <h3 class="m-0 text-lg font-semibold tracking-tight text-slate-900">{{ displayTitle }}</h3>
       <slot name="description">
-        <p v-if="displayDescription" class="empty-state-description">
+        <p v-if="displayDescription" class="text-sm text-slate-500 max-w-[280px] mx-auto">
           {{ displayDescription }}
         </p>
       </slot>
     </div>
-    <div v-if="!hideAction" class="empty-state-action">
+    <div v-if="!hideAction" class="mt-4">
       <slot name="action">
         <ui-button v-if="actionText" type="primary" @click="handleAction">
           <template #icon>

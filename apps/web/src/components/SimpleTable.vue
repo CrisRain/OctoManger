@@ -6,7 +6,6 @@ import { UiSpace, UiButton } from "@/lib/ui";
 interface Column {
   key: string;
   title: string;
-  width?: number;
   render?: (record: any) => any;
   format?: "status" | "date" | "datetime" | "relative" | "actions";
 }
@@ -147,14 +146,14 @@ function formatDate(dateStr: string, format: "full" | "date" | "relative") {
 </script>
 
 <template>
-  <div class="simple-table-wrapper">
+  <div class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
     <!-- 表格工具栏 -->
-    <div v-if="$slots.toolbar" class="table-toolbar">
+    <div v-if="$slots.toolbar" class="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-5 py-4">
       <slot name="toolbar" />
     </div>
 
     <!-- 加载状态 -->
-    <div v-if="loading" class="table-loading">
+    <div v-if="loading" class="flex items-center justify-center bg-white/30 py-16">
       <ui-spin :loading="true" tip="加载中..." />
     </div>
 
@@ -173,15 +172,14 @@ function formatDate(dateStr: string, format: "full" | "date" | "relative") {
     </EmptyState>
 
     <!-- 表格 -->
-    <div v-else class="simple-table-container">
-      <table class="simple-table">
+    <div v-else class="overflow-x-auto">
+      <table class="min-w-full border-collapse [&_thead]:bg-slate-50 [&_th]:border-b [&_th]:border-slate-200 [&_th]:px-5 [&_th]:py-3.5 [&_th]:text-left [&_th]:text-[12px] [&_th]:font-medium [&_th]:text-slate-500 [&_td]:border-b [&_td]:border-slate-200 [&_td]:px-5 [&_td]:py-4 [&_td]:align-top [&_td]:text-sm [&_td]:text-slate-800 [&_tbody_tr]:transition-all [&_tbody_tr]:duration-200 hover:[&_tbody_tr:hover]:bg-slate-50">
         <thead>
           <tr>
-            <th v-if="showIndex" class="index-column">#</th>
+            <th v-if="showIndex" class="font-mono text-slate-400">#</th>
             <th
               v-for="column in columns"
               :key="column.key"
-              :style="{ width: column.width ? `${column.width}px` : undefined }"
             >
               {{ column.title }}
             </th>
@@ -194,7 +192,7 @@ function formatDate(dateStr: string, format: "full" | "date" | "relative") {
             class="table-row"
             @click="$emit('row-click', record)"
           >
-            <td v-if="showIndex" class="index-column">{{ index + 1 }}</td>
+            <td v-if="showIndex" class="font-mono text-slate-400">{{ index + 1 }}</td>
             <td
               v-for="column in columns"
               :key="column.key"

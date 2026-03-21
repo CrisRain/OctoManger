@@ -38,21 +38,23 @@ function positionPopover() {
   const triggerRect = triggerRef.value.getBoundingClientRect();
   const pop = popoverRef.value;
   const popRect = pop.getBoundingClientRect();
+  const gutter = Math.max(triggerRect.height * 0.2, window.innerHeight * 0.01);
+  const viewportInset = Math.max(window.innerWidth * 0.015, window.innerHeight * 0.015);
 
   // Position above the trigger, centered
-  let top = triggerRect.top - popRect.height - 8;
+  let top = triggerRect.top - popRect.height - gutter;
   let left = triggerRect.left + triggerRect.width / 2 - popRect.width / 2;
 
   // If above viewport, flip below
-  if (top < 8) {
-    top = triggerRect.bottom + 8;
+  if (top < viewportInset) {
+    top = triggerRect.bottom + gutter;
     pop.dataset.placement = "bottom";
   } else {
     pop.dataset.placement = "top";
   }
 
   // Keep within horizontal bounds
-  left = Math.max(8, Math.min(left, window.innerWidth - popRect.width - 8));
+  left = Math.max(viewportInset, Math.min(left, window.innerWidth - popRect.width - viewportInset));
 
   pop.style.top = `${top}px`;
   pop.style.left = `${left}px`;
@@ -102,15 +104,13 @@ onUnmounted(() => {
       <div
         v-if="open"
         ref="popoverRef"
-        class="fixed z-popover rounded-xl border border-slate-200/80 bg-white px-4 py-3.5 shadow-lg"
-        style="min-width: 220px; max-width: 320px"
+        class="fixed z-popover rounded-xl border border-slate-200 bg-white px-4 py-3.5 shadow-md"
+        style="min-inline-size: var(--popover-min-inline); max-inline-size: var(--popover-max-inline)"
       >
         <!-- Arrow -->
         <div
           class="absolute w-2 h-2 rotate-45 border bg-white"
-          :class="popoverRef?.dataset.placement === 'bottom'
-            ? '-top-1 left-1/2 -translate-x-1/2 border-l-slate-200/80 border-t-slate-200/80 border-r-transparent border-b-transparent'
-            : '-bottom-1 left-1/2 -translate-x-1/2 border-r-slate-200/80 border-b-slate-200/80 border-l-transparent border-t-transparent'"
+          :class="popoverRef?.dataset.placement === 'bottom' ? '-top-1 left-1/2 -translate-x-1/2 border-l-slate-200 border-t-slate-200 border-r-transparent border-b-transparent' : '-bottom-1 left-1/2 -translate-x-1/2 border-r-slate-200 border-b-slate-200 border-l-transparent border-t-transparent'"
         />
         <div class="flex flex-col gap-2">
           <div class="flex items-start gap-2">

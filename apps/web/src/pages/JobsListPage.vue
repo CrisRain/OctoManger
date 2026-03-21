@@ -145,7 +145,7 @@ async function handleBatchExport(items: any[]) {
 </script>
 
 <template>
-  <div class="page-container jobs-list-page">
+  <div class="page-shell">
     <PageHeader
       title="定时任务"
       subtitle="管理自动化任务，支持 Cron 定时调度和手动触发"
@@ -172,26 +172,26 @@ async function handleBatchExport(items: any[]) {
     >
       <template #filters>
         <!-- 调度类型筛选 -->
-        <div class="filter-group">
-          <span class="filter-label">调度：</span>
-          <div class="filter-options">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="text-xs font-medium text-slate-500">调度：</span>
+          <div class="flex flex-wrap items-center gap-1">
             <button type="button"
-              class="filter-option"
-              :class="{ 'filter-option--active': !scheduleFilter }"
+              class="filter-chip"
+              :class="{ active: !scheduleFilter }"
               @click="scheduleFilter = ''"
             >
               全部
             </button>
             <button type="button"
-              class="filter-option"
-              :class="{ 'filter-option--active': scheduleFilter === 'scheduled' }"
+              class="filter-chip"
+              :class="{ active: scheduleFilter === 'scheduled' }"
               @click="scheduleFilter = 'scheduled'"
             >
               定时
             </button>
             <button type="button"
-              class="filter-option"
-              :class="{ 'filter-option--active': scheduleFilter === 'manual' }"
+              class="filter-chip"
+              :class="{ active: scheduleFilter === 'manual' }"
               @click="scheduleFilter = 'manual'"
             >
               手动
@@ -209,9 +209,9 @@ async function handleBatchExport(items: any[]) {
     </SmartListBar>
 
     <!-- 数据表格 -->
-    <ui-card class="data-grid-card table-desktop-only">
+    <ui-card class="mb-4 hidden lg:block">
       <ui-table
-        class="premium-table"
+
         :data="filteredJobs"
         :loading="loading"
         :pagination="{
@@ -225,15 +225,15 @@ async function handleBatchExport(items: any[]) {
       >
         <template #columns>
           <!-- 任务名称 -->
-          <ui-table-column title="任务名称" data-index="name" :width="240">
+          <ui-table-column title="任务名称" data-index="name">
             <template #cell="{ record }">
-              <div class="identifier-cell">
-                <div class="icon-box icon-yellow">
+              <div class="flex items-center gap-3">
+                <div class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border border-yellow-200 bg-yellow-50 text-sm text-yellow-600 shadow-sm">
                   <icon-schedule />
                 </div>
-                <div class="grow-content">
-                  <div class="identifier-text">{{ record.name }}</div>
-                  <code v-if="record.key" class="sub-text mono">{{ record.key }}</code>
+                <div class="flex min-w-0 flex-col gap-0.5">
+                  <div class="truncate text-[14px] font-medium text-slate-900">{{ record.name }}</div>
+                  <code v-if="record.key" class="text-xs text-slate-500 mono">{{ record.key }}</code>
                 </div>
               </div>
             </template>
@@ -242,10 +242,10 @@ async function handleBatchExport(items: any[]) {
           <!-- 插件 · 动作 -->
           <ui-table-column title="插件 · 动作">
             <template #cell="{ record }">
-              <span class="plugin-action">
-                <span class="plugin-key">{{ record.plugin_key }}</span>
-                <span class="plugin-dot">·</span>
-                <span class="action-tag">{{ record.action }}</span>
+              <span class="inline-flex flex-wrap items-center gap-2">
+                <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-mono font-semibold text-slate-700 border-slate-200 bg-white/[64%]">{{ record.plugin_key }}</span>
+                <span class="text-slate-400">·</span>
+                <span class="inline-flex items-center rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-xs font-mono text-slate-600">{{ record.action }}</span>
               </span>
             </template>
           </ui-table-column>
@@ -253,16 +253,16 @@ async function handleBatchExport(items: any[]) {
           <!-- 调度计划 -->
           <ui-table-column title="调度计划">
             <template #cell="{ record }">
-              <span v-if="record.schedule?.cron_expression" class="cron-badge">
-                <icon-clock-circle class="cron-icon" />
+              <span v-if="record.schedule?.cron_expression" class="inline-flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-mono font-semibold text-amber-700">
+                <icon-clock-circle class="h-3.5 w-3.5" />
                 {{ record.schedule.cron_expression }}
               </span>
-              <span v-else class="text-muted">手动触发</span>
+              <span v-else class="text-sm text-slate-400">手动触发</span>
             </template>
           </ui-table-column>
 
           <!-- 快速操作 -->
-          <ui-table-column title="操作" :width="80" align="right">
+          <ui-table-column title="操作" align="right">
             <template #cell="{ record }">
               <RowActionsMenu
                 :item="record"
@@ -291,20 +291,20 @@ async function handleBatchExport(items: any[]) {
       </ui-table>
     </ui-card>
 
-    <div class="mobile-list">
+    <div class="flex flex-col gap-3 lg:hidden">
       <ui-card
         v-for="record in filteredJobs"
         :key="record.id"
-        class="mobile-list-card"
+        class="rounded-xl border p-5 border-slate-200 bg-white shadow-sm"
       >
-        <div class="mobile-list-header">
-          <div class="icon-box icon-yellow">
+        <div class="mb-3 flex items-center gap-3">
+          <div class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border border-yellow-200 bg-yellow-50 text-sm text-yellow-600 shadow-sm">
             <icon-schedule />
           </div>
-          <div class="mobile-list-title-group">
-            <div class="mobile-list-title">{{ record.name }}</div>
-            <div class="mobile-list-subtitle">
-              <code v-if="record.key" class="sub-text mono">{{ record.key }}</code>
+          <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+            <div class="truncate text-sm font-semibold text-slate-900">{{ record.name }}</div>
+            <div class="text-xs text-slate-500">
+              <code v-if="record.key" class="text-xs text-slate-500 mono">{{ record.key }}</code>
             </div>
           </div>
           <RowActionsMenu
@@ -321,26 +321,26 @@ async function handleBatchExport(items: any[]) {
           />
         </div>
 
-        <div class="mobile-list-meta">
-          <div class="mobile-list-meta-row">
-            <span class="mobile-list-label">插件</span>
-            <div class="mobile-list-value">
-              <span class="plugin-action">
-                <span class="plugin-key">{{ record.plugin_key }}</span>
-                <span class="plugin-dot">·</span>
-                <span class="action-tag">{{ record.action }}</span>
+        <div class="flex flex-col gap-2">
+          <div class="flex items-center justify-between gap-2">
+            <span class="w-12 flex-shrink-0 text-xs font-medium text-slate-500">插件</span>
+            <div class="flex flex-wrap items-center gap-1">
+              <span class="inline-flex flex-wrap items-center gap-2">
+                <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-mono font-semibold text-slate-700 border-slate-200 bg-white/[64%]">{{ record.plugin_key }}</span>
+                <span class="text-slate-400">·</span>
+                <span class="inline-flex items-center rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-xs font-mono text-slate-600">{{ record.action }}</span>
               </span>
             </div>
           </div>
 
-          <div class="mobile-list-meta-row">
-            <span class="mobile-list-label">调度</span>
-            <div class="mobile-list-value">
-              <span v-if="record.schedule?.cron_expression" class="cron-badge">
-                <icon-clock-circle class="cron-icon" />
+          <div class="flex items-center justify-between gap-2">
+            <span class="w-12 flex-shrink-0 text-xs font-medium text-slate-500">调度</span>
+            <div class="flex flex-wrap items-center gap-1">
+              <span v-if="record.schedule?.cron_expression" class="inline-flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-mono font-semibold text-amber-700">
+                <icon-clock-circle class="h-3.5 w-3.5" />
                 {{ record.schedule.cron_expression }}
               </span>
-              <span v-else class="text-muted">手动触发</span>
+              <span v-else class="text-sm text-slate-400">手动触发</span>
             </div>
           </div>
         </div>
@@ -348,7 +348,7 @@ async function handleBatchExport(items: any[]) {
 
       <ui-card
         v-if="!loading && !filteredJobs.length"
-        class="mobile-list-card mobile-list-empty-card"
+        class="rounded-xl border border-slate-200 bg-white shadow-sm px-5 py-8"
       >
         <ui-empty description="暂无任务">
           <ui-button type="primary" @click="router.push(to.jobs.create())">
@@ -366,58 +366,43 @@ async function handleBatchExport(items: any[]) {
       @delete="currentJob && deleteJob(currentJob)"
     >
       <template #detail>
-        <div class="detail-section">
-          <h4 class="detail-section-title">基本信息</h4>
-
-          <div class="detail-row">
-            <span class="detail-label">任务ID</span>
-            <span class="detail-value">
-              <code>{{ currentJob?.id }}</code>
-            </span>
-          </div>
-
-          <div class="detail-row">
-            <span class="detail-label">标识符</span>
-            <span class="detail-value">
-              <code class="key-badge">{{ currentJob?.key }}</code>
-            </span>
-          </div>
-
-          <div class="detail-row">
-            <span class="detail-label">插件</span>
-            <span class="detail-value">
-              <code class="key-badge">{{ currentJob?.plugin_key }}</code>
-            </span>
-          </div>
-
-          <div class="detail-row">
-            <span class="detail-label">动作</span>
-            <span class="detail-value">
-              <span class="action-tag">{{ currentJob?.action }}</span>
-            </span>
-          </div>
-
-          <div class="detail-row" v-if="currentJob?.schedule?.cron_expression">
-            <span class="detail-label">调度表达式</span>
-            <span class="detail-value">
-              <span class="cron-badge">
-                <icon-clock-circle class="cron-icon" />
+        <div class="rounded-xl border p-4 border-slate-200 bg-white/[56%]">
+          <h4 class="mb-3 text-sm font-semibold text-slate-900">基本信息</h4>
+          <div class="divide-y divide-slate-100">
+            <div class="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0 max-md:flex-col max-md:items-start">
+              <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">任务ID</span>
+              <span class="text-sm font-medium text-slate-900"><code>{{ currentJob?.id }}</code></span>
+            </div>
+            <div class="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0 max-md:flex-col max-md:items-start">
+              <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">标识符</span>
+              <code class="inline-flex items-center rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-xs font-mono text-slate-600">{{ currentJob?.key }}</code>
+            </div>
+            <div class="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0 max-md:flex-col max-md:items-start">
+              <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">插件</span>
+              <code class="inline-flex items-center rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-xs font-mono text-slate-600">{{ currentJob?.plugin_key }}</code>
+            </div>
+            <div class="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0 max-md:flex-col max-md:items-start">
+              <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">动作</span>
+              <span class="inline-flex items-center rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-xs font-mono text-slate-600">{{ currentJob?.action }}</span>
+            </div>
+            <div v-if="currentJob?.schedule?.cron_expression" class="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0 max-md:flex-col max-md:items-start">
+              <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">调度表达式</span>
+              <span class="inline-flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-mono font-semibold text-amber-700">
+                <icon-clock-circle class="h-3.5 w-3.5" />
                 {{ currentJob.schedule.cron_expression }}
               </span>
-            </span>
+            </div>
           </div>
         </div>
 
-        <div class="detail-section" v-if="currentJob?.input">
-          <h4 class="detail-section-title">输入参数</h4>
-          <div class="config-box">
-            <pre>{{ JSON.stringify(currentJob.input, null, 2) }}</pre>
-          </div>
+        <div v-if="currentJob?.input" class="rounded-xl border p-4 border-slate-200 bg-white/[56%]">
+          <h4 class="mb-3 text-sm font-semibold text-slate-900">输入参数</h4>
+          <pre class="overflow-auto rounded-lg border border-slate-200 bg-slate-950 p-4 text-xs leading-6 text-slate-300 whitespace-pre-wrap break-all">{{ JSON.stringify(currentJob.input, null, 2) }}</pre>
         </div>
       </template>
 
       <template #footer>
-        <div class="drawer-footer-actions">
+        <div class="flex w-full items-center justify-end gap-2">
           <ui-button @click="drawerVisible = false">关闭</ui-button>
           <ui-button
             type="outline"

@@ -19,8 +19,8 @@ const attrs = useAttrs();
 
 const classes = computed(() =>
   cx(
-    "ui-tag inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 font-bold",
-    props.size === "small" ? "text-[11.5px]" : "text-[12px]",
+    "ui-tag glass inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-semibold tracking-[-0.01em]",
+    props.size === "small" ? "text-[0.72rem]" : "text-[0.78rem]",
     TAG_TONE_CLASS[props.color] ?? TAG_TONE_CLASS.gray,
     attrs.class as string,
   ),
@@ -40,7 +40,7 @@ function handleClose(event: MouseEvent) {
     <button
       v-if="closable"
       type="button"
-      class="ml-1 text-current/70 transition hover:text-current"
+      class="ml-1 rounded-full bg-black/5 px-1.5 py-0.5 text-current/70 transition hover:bg-black/10 hover:text-current"
       @click="handleClose"
     >
       ×

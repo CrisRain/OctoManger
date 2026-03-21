@@ -15,10 +15,10 @@ const attrs = useAttrs();
     v-bind="{ ...attrs, class: undefined }"
     :class="cx('ui-empty flex flex-col items-center gap-3 py-10 text-center', attrs.class as string)"
   >
-    <div class="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-400">
+    <div class="flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 bg-white/82 text-slate-400 shadow-sm">
       <span class="text-xl">∅</span>
     </div>
-    <p class="text-sm text-slate-500">{{ description }}</p>
+    <p class="text-sm font-medium text-slate-500">{{ description }}</p>
     <slot />
   </div>
 </template>

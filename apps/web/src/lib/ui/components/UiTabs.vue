@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch, useSlots, useAttrs, type VNode } from "vue";
+import { computed, ref, watch, useSlots, useAttrs, h, Fragment, type VNode } from "vue";
 import { flattenNodes, cx } from "../utils";
 
 interface Props {
@@ -71,28 +71,18 @@ function setActive(key: string) {
 
 <template>
   <div v-bind="{ ...attrs, class: undefined }" :class="cx('ui-tabs', attrs.class as string)">
-    <div class="ui-tabs-nav flex items-center border-b border-slate-200">
-      <div class="ui-tabs-nav-tab-list flex items-center gap-0.5">
+    <div class="ui-tabs-nav flex items-center rounded-lg border border-slate-200 bg-slate-50 p-1 shadow-sm">
+      <div class="ui-tabs-nav-list flex w-full gap-1">
         <button
           v-for="tab in tabs"
           :key="tab.key"
           type="button"
-          :class="cx(
-            'ui-tabs-tab relative px-4 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-none',
-            tab.key === (currentKey || tabs[0]?.key)
-              ? 'ui-tabs-tab-active text-accent'
-              : 'text-slate-500 hover:text-slate-700',
-          )"
+          :class="cx( 'ui-tabs-tab relative rounded-md px-4 py-2 text-[14px] font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/20', tab.key === (currentKey || tabs[0]?.key) ? 'ui-tabs-tab-active bg-white text-[var(--accent)] shadow-sm' : 'text-slate-500 hover:bg-white/60 hover:text-slate-700', )"
           @click="setActive(tab.key)"
         >
           <span class="ui-tabs-tab-title">
-            <component :is="() => tab.title" />
+            <component :is="() => h(Fragment, null, typeof tab.title === 'string' ? [tab.title] : tab.title)" />
           </span>
-          <span
-            v-if="tab.key === (currentKey || tabs[0]?.key)"
-            class="absolute bottom-0 left-2 right-2 h-0.5 rounded-full bg-accent"
-            style="animation: tab-ink 0.25s cubic-bezier(0.22, 1, 0.36, 1)"
-          />
         </button>
       </div>
     </div>
@@ -103,18 +93,18 @@ function setActive(key: string) {
           <section
             v-for="tab in tabs.filter((t) => t.key === (currentKey || tabs[0]?.key))"
             :key="tab.key"
-            class="ui-tabs-content-item ui-tabs-pane py-4"
+            class="ui-tabs-content-item ui-tabs-pane py-5"
           >
-            <component :is="() => tab.content()" />
+            <component :is="() => h(Fragment, null, tab.content())" />
           </section>
         </template>
         <template v-else>
           <section
             v-for="tab in tabs"
             :key="tab.key"
-            :class="cx('ui-tabs-content-item ui-tabs-pane py-4', tab.key === (currentKey || tabs[0]?.key) ? 'block' : 'hidden')"
+            :class="cx('ui-tabs-content-item ui-tabs-pane py-5', tab.key === (currentKey || tabs[0]?.key) ? 'block' : 'hidden')"
           >
-            <component :is="() => tab.content()" />
+            <component :is="() => h(Fragment, null, tab.content())" />
           </section>
         </template>
       </div>

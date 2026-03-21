@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { ref, computed, watch } from "vue";
 import { useRoute } from "vue-router";
-import { Message } from "@/lib/feedback";
 import { usePlugins, useSyncPlugins, usePluginSettings } from "@/composables/usePlugins";
+import { useMessage } from "@/composables";
 import { PageHeader } from "@/components/index";
 import { to } from "@/router/registry";
 
 const route = useRoute();
 const pluginKey = route.params.id as string;
+const message = useMessage();
 
 const { data: plugins, loading, refresh } = usePlugins();
 const plugin = computed(() => plugins.value.find((p) => p.manifest.key === pluginKey));
@@ -20,13 +21,13 @@ async function handleSync() {
     const result = await sync.execute();
     await refresh();
     if (result.failed === 0) {
-      Message.success(`已同步 ${result.synced} 个账号类型`);
+      message.success(`已同步 ${result.synced} 个账号类型`);
     } else {
       const errMsg = result.errors.join("; ");
-      Message.warning(`部分同步失败：${errMsg}`);
+      message.warning(`部分同步失败：${errMsg}`);
     }
   } catch (e) {
-    Message.error(e instanceof Error ? e.message : "同步失败");
+    message.error(e instanceof Error ? e.message : "同步失败");
   }
 }
 
@@ -61,15 +62,15 @@ async function saveSettings() {
   }
   try {
     await settings.save(payload);
-    Message.success("设置已保存");
+    message.success("设置已保存");
   } catch (e) {
-    Message.error(e instanceof Error ? e.message : "保存失败");
+    message.error(e instanceof Error ? e.message : "保存失败");
   }
 }
 </script>
 
 <template>
-  <div class="page-container plugin-page">
+  <div class="page-shell">
     <PageHeader
       :title="plugin ? plugin.manifest.name : '插件详情'"
       icon-bg="linear-gradient(135deg, rgba(236,72,153,0.12), rgba(219,39,119,0.12))"
@@ -80,94 +81,95 @@ async function saveSettings() {
       <template #icon><icon-apps /></template>
       <template #subtitle>
         <template v-if="plugin">
-          <code class="key-badge highlight-key">v{{ plugin.manifest.version }}</code>
+          <code class="inline-flex items-center rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-xs font-mono text-slate-600 text-[var(--accent)]">v{{ plugin.manifest.version }}</code>
           &nbsp;·&nbsp;
-          <span class="muted-tag">@{{ plugin.manifest.key }}</span>
+          <span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600">@{{ plugin.manifest.key }}</span>
         </template>
       </template>
     </PageHeader>
 
-    <div v-if="loading" class="center-empty">
-      <ui-spin :size="36" />
+    <div v-if="loading" class="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed px-6 py-16 text-center border-slate-200 bg-white/[56%] shadow-sm">
+      <ui-spin size="2.25em" />
     </div>
-    <div v-else-if="!plugin" class="center-empty">
-      <icon-apps class="plugin-empty-icon" />
-      <p class="plugin-empty-copy">未找到该插件。</p>
+    <div v-else-if="!plugin" class="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed px-6 py-16 text-center border-slate-200 bg-white/[56%] shadow-sm min-h-[240px]">
+      <icon-apps class="h-12 w-12 text-slate-400" />
+      <p class="text-base font-semibold text-slate-900">未找到该插件。</p>
     </div>
 
-    <div v-else class="content-grid">
+    <div v-else class="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,_1.15fr)_minmax(16em,_0.85fr)]">
       <!-- Actions list -->
-      <ui-card class="premium-card">
+      <ui-card class="min-w-0 flex-1 rounded-xl border overflow-hidden border-slate-200 bg-white shadow">
         <template #title>
-          <div class="card-header-with-icon">
-            <div class="card-icon-box"><icon-thunderbolt /></div>
+          <div class="flex items-center gap-2">
+            <div class="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-xl text-[var(--accent)] bg-[var(--accent)]/10"><icon-thunderbolt /></div>
             可用操作
           </div>
         </template>
-        <div class="action-list">
-          <div
+        <div class="flex flex-col gap-3">
+          <article
             v-for="act in plugin.manifest.actions"
             :key="act.key"
-            class="action-item"
+            class="flex flex-col items-start gap-2.5 rounded-xl border p-4 border-slate-200 bg-slate-50 shadow-sm"
           >
-            <code class="key-badge action-key">{{ act.key }}</code>
-            <span class="action-name">{{ act.name }}</span>
-            <p v-if="act.description" class="action-desc">{{ act.description }}</p>
-          </div>
-          <p v-if="!plugin.manifest.actions.length" class="no-actions">
+            <div class="flex w-full flex-wrap items-center gap-3 max-md:flex-col max-md:items-start max-md:gap-2">
+              <code class="inline-flex items-center rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-xs font-mono text-slate-600 flex-shrink-0 self-start">{{ act.key }}</code>
+              <span class="text-sm font-semibold text-slate-900">{{ act.name }}</span>
+            </div>
+            <p v-if="act.description" class="m-0 text-sm leading-6 text-slate-500">{{ act.description }}</p>
+          </article>
+          <p v-if="!plugin.manifest.actions.length" class="text-sm leading-6 text-slate-500 italic">
             该插件暂无可用操作。
           </p>
         </div>
       </ui-card>
 
       <!-- Sidebar info -->
-      <div class="side-col">
-        <ui-card class="premium-card">
+      <div class="flex flex-col gap-6">
+        <ui-card class="min-w-0 flex-1 rounded-xl border overflow-hidden border-slate-200 bg-white shadow">
           <template #title>
-            <div class="card-header-with-icon">
-              <div class="card-icon-box info"><icon-info-circle /></div>
+            <div class="flex items-center gap-2">
+              <div class="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-xl text-sky-700 bg-sky-50"><icon-info-circle /></div>
               插件信息
             </div>
           </template>
-          <div class="info-rows">
-            <div class="info-row">
-              <span class="detail-label">健康状态</span>
-              <div class="status-cell">
-                <span class="status-dot-large" :class="plugin.healthy ? 'online' : 'offline'" />
-                <ui-tag :color="plugin.healthy ? 'green' : 'red'" class="status-tag-pill">
+          <div class="flex flex-col">
+            <div class="flex items-start justify-between gap-4 border-b border-slate-100 py-3 first:pt-0 last:border-b-0 last:pb-0 max-md:flex-col max-md:items-start">
+              <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">健康状态</span>
+              <div class="inline-flex items-center gap-1.5">
+                <span class="inline-block h-2 w-2 flex-shrink-0 rounded-full" :class="plugin.healthy ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'" />
+                <ui-tag :color="plugin.healthy ? 'green' : 'red'">
                   {{ plugin.healthy ? "healthy" : "degraded" }}
                 </ui-tag>
               </div>
             </div>
-            <div v-if="plugin.manifest.description" class="info-row align-start">
-              <span class="detail-label">描述</span>
-              <span class="detail-value text-right description-text">{{ plugin.manifest.description }}</span>
+            <div v-if="plugin.manifest.description" class="flex items-start justify-between gap-4 border-b border-slate-100 py-3 first:pt-0 last:border-b-0 last:pb-0 max-md:flex-col max-md:items-start">
+              <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">描述</span>
+              <span class="text-sm font-medium text-slate-900 leading-7 text-slate-700 ml-auto text-left max-md:text-left">{{ plugin.manifest.description }}</span>
             </div>
-            <div class="info-row info-row--column">
-              <span class="detail-label m-b-4">权限列表</span>
-              <div v-if="plugin.manifest.capabilities.length" class="cap-tags">
-                <ui-tag v-for="cap in plugin.manifest.capabilities" :key="cap" size="small" class="cap-pill" color="blue">
+            <div class="flex items-start justify-between gap-4 border-b border-slate-100 py-3 first:pt-0 last:border-b-0 last:pb-0 max-md:flex-col max-md:items-start flex-col gap-3">
+              <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500 mb-0">权限列表</span>
+              <div v-if="plugin.manifest.capabilities.length" class="flex flex-wrap gap-2">
+                <ui-tag v-for="cap in plugin.manifest.capabilities" :key="cap" size="small" class="whitespace-nowrap" color="blue">
                   {{ cap }}
                 </ui-tag>
               </div>
-              <span v-else class="text-muted italic-tag">无特殊权限</span>
+              <span v-else class="text-sm leading-6 text-slate-500 italic">无特殊权限</span>
             </div>
           </div>
         </ui-card>
 
-        <ui-card class="premium-card op-card mt-16">
+        <ui-card class="min-w-0 flex-1 rounded-xl border overflow-hidden border-slate-200 bg-white shadow">
           <template #title>
-            <div class="card-header-with-icon">
-              <div class="card-icon-box warn"><icon-tool /></div>
+            <div class="flex items-center gap-2">
+              <div class="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-xl text-amber-700 bg-amber-50"><icon-tool /></div>
               操作
             </div>
           </template>
-          <div class="op-rows">
-            <div class="op-row">
-              <p class="op-label">同步账号类型</p>
-              <p class="op-hint">将插件定义的账号类型同步到系统中</p>
+          <div class="flex flex-col gap-4">
+            <div class="flex items-start gap-3 rounded-xl border p-4 border-slate-200 bg-slate-50 shadow-sm flex-col">
+              <p class="text-sm font-semibold text-slate-900">同步账号类型</p>
+              <p class="text-sm leading-6 text-slate-500">将插件定义的账号类型同步到系统中</p>
               <ui-button
-                class="op-btn"
                 size="small"
                 type="outline"
                 :loading="sync.loading.value"
@@ -183,47 +185,47 @@ async function saveSettings() {
         <!-- Settings panel -->
         <ui-card
           v-if="plugin.manifest.settings?.length"
-          class="premium-card config-card mt-16"
+          class="min-w-0 flex-1 rounded-xl border overflow-hidden border-slate-200 bg-white shadow"
         >
           <template #title>
-            <div class="card-header-with-icon">
-              <div class="card-icon-box dark"><icon-settings /></div>
+            <div class="flex items-center gap-2">
+              <div class="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-xl text-[var(--accent)] bg-[var(--accent)]/10"><icon-settings /></div>
               插件设置
             </div>
           </template>
           <ui-spin :loading="settings.loading.value">
-            <ui-form layout="vertical" class="premium-form">
+            <ui-form layout="vertical" class="flex flex-col gap-4">
               <ui-form-item
                 v-for="s in plugin.manifest.settings"
                 :key="s.key"
-                class="premium-form-item"
+                class="mb-0"
               >
                 <template #label>
-                  <span class="form-item-label">{{ s.label || s.key }}</span>
-                  <ui-tag v-if="s.required" size="small" color="red" class="req-tag">必填</ui-tag>
+                  <span class="text-sm font-semibold text-slate-900">{{ s.label || s.key }}</span>
+                  <ui-tag v-if="s.required" size="small" color="red" class="ml-2">必填</ui-tag>
                 </template>
-                <div class="field-body">
+                <div class="flex flex-col gap-1.5">
                   <ui-input
                     v-if="isSecretSetting(s.key, s.secret)"
                     v-model="settingValues[s.key]"
                     type="password"
                     allow-clear
-                    class="premium-input"
+                    class="w-full"
                     :placeholder="s.required ? '必填' : '可选'"
                   />
                   <ui-input
                     v-else
                     v-model="settingValues[s.key]"
                     allow-clear
-                    class="premium-input"
+                    class="w-full"
                     :placeholder="s.required ? '必填' : '可选'"
                   />
-                  <p v-if="s.description" class="setting-hint">{{ s.description }}</p>
+                  <p v-if="s.description" class="text-sm leading-6 text-slate-500">{{ s.description }}</p>
                 </div>
               </ui-form-item>
               <ui-button
                 type="primary"
-                class="save-btn"
+                class="self-start max-md:w-full max-md:justify-center"
                 :loading="settings.saving.value"
                 @click="saveSettings"
               >

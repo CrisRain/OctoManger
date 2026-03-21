@@ -165,7 +165,7 @@ export function truncate(text: string, maxLength: number, suffix = "..."): strin
 export function highlightKeyword(text: string, keyword: string): string {
   if (!keyword) return text;
   const regex = new RegExp(`(${keyword})`, "gi");
-  return text.replace(regex, '<mark style="background: #ffec3d; padding: 0 2px;">$1</mark>');
+  return text.replace(regex, '<mark style="background: #ffec3d; padding: 0 0.125em;">$1</mark>');
 }
 
 /**

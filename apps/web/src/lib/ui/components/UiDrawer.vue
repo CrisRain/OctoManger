@@ -1,29 +1,31 @@
 <script setup lang="ts">
+defineOptions({
+  inheritAttrs: false,
+});
+
 import { computed, useAttrs } from "vue";
-import { cx, normalizeWidth } from "../utils";
+import { cx } from "../utils";
 
 interface Props {
   visible?: boolean;
   placement?: "left" | "right" | "top" | "bottom";
-  width?: number | string;
-  height?: number | string;
   closable?: boolean;
   header?: boolean;
   footer?: boolean;
   title?: string;
   maskClosable?: boolean;
+  popupContainer?: string;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   visible: false,
   placement: "right",
-  width: 420,
-  height: 420,
   closable: true,
   header: true,
   footer: false,
   title: "",
   maskClosable: true,
+  popupContainer: "body",
 });
 
 const emit = defineEmits<{
@@ -43,9 +45,9 @@ const panelClass = computed(() => {
 
 const panelStyle = computed(() => {
   if (props.placement === "top" || props.placement === "bottom") {
-    return { height: normalizeWidth(props.height) ?? "420px" };
+    return { blockSize: "var(--drawer-block-size)" };
   }
-  return { width: normalizeWidth(props.width) ?? "420px" };
+  return { inlineSize: "var(--drawer-inline-size)" };
 });
 
 function close() {
@@ -60,7 +62,7 @@ function onBackdropClick(event: MouseEvent) {
 </script>
 
 <template>
-  <Teleport to="body">
+  <Teleport :to="popupContainer">
     <Transition name="drawer-backdrop">
       <div
         v-if="visible"
@@ -89,7 +91,7 @@ function onBackdropClick(event: MouseEvent) {
                 class="flex items-center justify-center w-7 h-7 rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
                 @click="close"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                <svg class="h-[1em] w-[1em]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
               </button>
             </header>
 

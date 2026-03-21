@@ -3,7 +3,6 @@
 defineProps<{
   title?: string;
   dataIndex?: string;
-  width?: number | string;
   align?: "left" | "center" | "right";
 }>();
 </script>

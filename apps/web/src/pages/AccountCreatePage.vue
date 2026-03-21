@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { ref, computed, watch } from "vue";
 import { useRouter } from "vue-router";
-import { Message } from "@/lib/feedback";
 import { useAccountTypes } from "@/composables/useAccountTypes";
 import { useCreateAccount } from "@/composables/useAccounts";
+import { useMessage } from "@/composables";
 import { PageHeader } from "@/components/index";
 import { to } from "@/router/registry";
 
 const router = useRouter();
+const message = useMessage();
 const { data: accountTypes } = useAccountTypes();
 const create = useCreateAccount();
 
@@ -77,19 +78,19 @@ async function handleCreate() {
       tags: tags.value.split(",").map((t) => t.trim()).filter(Boolean),
       spec: builtSpec,
     });
-    Message.success("账号已创建");
+    message.success("账号已创建");
     router.push(to.accounts.list());
   } catch (e) {
-    Message.error(e instanceof Error ? e.message : "创建失败");
+    message.error(e instanceof Error ? e.message : "创建失败");
   }
 }
 </script>
 
 <template>
-  <div class="page-container form-page">
+  <div class="page-shell">
     <PageHeader
       title="创建账号"
-      subtitle="添加一个新的账号实例。"
+      subtitle="创建一个新的账号"
       icon-bg="var(--accent-light)"
       icon-color="var(--accent)"
       :back-to="to.accounts.list()"
@@ -127,8 +128,8 @@ async function handleCreate() {
 
         <!-- Dynamic spec fields from schema -->
         <template v-if="specFields.length">
-          <ui-divider orientation="left" class="section-divider">
-            <span class="divider-label">凭据 / Spec</span>
+          <ui-divider orientation="left" class="my-4">
+            <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">凭据 / Spec</span>
           </ui-divider>
 
           <ui-form-item
@@ -138,15 +139,15 @@ async function handleCreate() {
           >
             <template #label>
               <span>{{ field.title }}</span>
-              <ui-tag v-if="field.required" size="small" color="red" class="required-tag">必填</ui-tag>
-              <code class="field-key-hint">{{ field.key }}</code>
+              <ui-tag v-if="field.required" size="small" color="red" class="ml-1">必填</ui-tag>
+              <code class="ml-1 text-xs font-mono text-slate-400">{{ field.key }}</code>
             </template>
 
             <ui-input-number
               v-if="field.type === 'integer'"
               v-model="(spec[field.key] as unknown as number)"
               :placeholder="field.defaultValue || field.key"
-              class="input-fill"
+              class="w-full"
             />
             <ui-input
               v-else-if="field.isSecret"
@@ -164,7 +165,7 @@ async function handleCreate() {
           </ui-form-item>
         </template>
 
-        <div class="form-actions">
+        <div class="mt-4 flex items-center justify-end gap-2 border-t border-slate-100 pt-4">
           <ui-button @click="router.push(to.accounts.list())">取消</ui-button>
           <ui-button
             type="primary"

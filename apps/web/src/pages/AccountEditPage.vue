@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { Message } from "@/lib/feedback";
 import { useAccounts, usePatchAccount } from "@/composables/useAccounts";
+import { useMessage } from "@/composables";
 import { useAccountTypes } from "@/composables/useAccountTypes";
 import { PageHeader } from "@/components/index";
 import { to } from "@/router/registry";
@@ -10,6 +10,7 @@ import { to } from "@/router/registry";
 const route = useRoute();
 const router = useRouter();
 const accountId = Number(route.params.id);
+const message = useMessage();
 
 const { data: accounts, loading, refresh } = useAccounts();
 const { data: accountTypes } = useAccountTypes();
@@ -89,18 +90,18 @@ async function handleSave() {
       spec: specPayload,
     });
     await refresh();
-    Message.success("账号已更新");
+    message.success("账号已更新");
     router.push(to.accounts.detail(accountId));
   } catch (e) {
-    Message.error(e instanceof Error ? e.message : "保存失败");
+    message.error(e instanceof Error ? e.message : "保存失败");
   }
 }
 </script>
 
 <template>
-  <div class="page-container form-page">
+  <div class="page-shell">
     <PageHeader
-      title="修改账号"
+      title="编辑账号"
       :subtitle="account ? `正在编辑 ${account.identifier}` : ''"
       icon-bg="var(--accent-light)"
       icon-color="var(--accent)"
@@ -110,18 +111,18 @@ async function handleSave() {
       <template #icon><icon-user /></template>
     </PageHeader>
 
-    <div v-if="loading" class="center-empty">
-      <ui-spin :size="36" />
+    <div v-if="loading" class="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed px-6 py-16 text-center border-slate-200 bg-white/[56%] shadow-sm">
+      <ui-spin size="2.25em" />
     </div>
-    <div v-else-if="!account" class="center-empty">
-      <p class="muted-copy">未找到该账号。</p>
+    <div v-else-if="!account" class="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed px-6 py-16 text-center border-slate-200 bg-white/[56%] shadow-sm">
+      <p class="text-sm leading-6 text-slate-500">未找到该账号。</p>
     </div>
 
     <ui-card v-else-if="account">
       <ui-form layout="vertical">
         <!-- Read-only info -->
         <ui-form-item label="账号类型">
-          <code class="key-badge">{{ account.account_type_key || "—" }}</code>
+          <code class="inline-flex items-center rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-xs font-mono text-slate-600">{{ account.account_type_key || "—" }}</code>
         </ui-form-item>
 
         <ui-form-item label="标识符">
@@ -142,8 +143,8 @@ async function handleSave() {
 
         <!-- Dynamic spec fields -->
         <template v-if="specFields.length">
-          <ui-divider orientation="left" class="section-divider">
-            <span class="divider-label">凭据 / Spec</span>
+          <ui-divider orientation="left" class="my-4">
+            <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">凭据 / Spec</span>
           </ui-divider>
 
           <ui-form-item
@@ -152,15 +153,15 @@ async function handleSave() {
           >
             <template #label>
               <span>{{ field.title }}</span>
-              <ui-tag v-if="field.required" size="small" color="red" class="required-tag">必填</ui-tag>
-              <code class="field-key-hint">{{ field.key }}</code>
+              <ui-tag v-if="field.required" size="small" color="red" class="ml-1">必填</ui-tag>
+              <code class="ml-1 text-xs font-mono text-slate-400">{{ field.key }}</code>
             </template>
 
             <ui-input-number
               v-if="field.type === 'integer'"
               v-model="(spec[field.key] as unknown as number)"
               :placeholder="field.defaultValue || field.key"
-              class="input-fill"
+              class="w-full"
             />
             <ui-input
               v-else-if="field.isSecret"
@@ -180,21 +181,21 @@ async function handleSave() {
 
         <!-- Fallback: raw spec JSON if no schema -->
         <template v-else>
-          <ui-divider orientation="left" class="section-divider">
-            <span class="divider-label">凭据 / Spec（JSON）</span>
+          <ui-divider orientation="left" class="my-4">
+            <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">凭据 / Spec（JSON）</span>
           </ui-divider>
           <ui-form-item label="Spec（原始 JSON）">
             <ui-textarea
               :model-value="JSON.stringify(account.spec, null, 2)"
               disabled
               :auto-size="{ minRows: 3, maxRows: 10 }"
-              class="mono-field"
+              class="font-mono text-sm"
             />
-            <p class="field-hint">该账号类型未找到 Schema，Spec 不可编辑。</p>
+            <p class="text-sm leading-6 text-slate-500">该账号类型未找到 Schema，Spec 不可编辑。</p>
           </ui-form-item>
         </template>
 
-        <div class="form-actions">
+        <div class="mt-4 flex items-center justify-end gap-2 border-t border-slate-100 pt-4">
           <ui-button @click="router.push(to.accounts.detail(accountId))">取消</ui-button>
           <ui-button
             type="primary"

@@ -64,8 +64,8 @@ const allActions = computed(() => {
   const source = props.actions.length > 0 ? props.actions : defaultActions;
   const normalized = source
     .map((action, index) => {
-      if (action.divider || action.key === "divider") {
-        return { key: `${action.key || "divider"}-${index}`, divider: true } satisfies Action;
+      if (action.divider || action.key === "text-slate-300") {
+        return { key: `${action.key || "text-slate-300"}-${index}`, divider: true } satisfies Action;
       }
       return action;
     })
@@ -91,25 +91,25 @@ function handleMenuClick(e: Event) {
 
 <template>
   <ui-dropdown class="row-actions-dropdown" :visible="visible" @popup-visible-change="visible = $event" @click="handleMenuClick">
-    <button type="button" class="row-actions-trigger" @click.stop>
+    <button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/20">
       <icon-more />
     </button>
     <template #content>
-      <div class="menu-panel" role="menu">
+      <div class="min-w-[140px] py-1.5" role="menu">
         <template v-for="action in allActions" :key="action.key">
-          <div v-if="action.divider" class="menu-divider" role="separator" />
+          <div v-if="action.divider" class="my-1 border-t border-slate-200" role="separator" />
           <button
             v-else
             type="button"
-            class="menu-item"
-            :class="{ 'menu-item--danger': action.danger }"
+            class="flex w-full cursor-pointer items-center gap-2.5 rounded-lg border-0 bg-transparent px-3 py-2 text-left text-[14px] text-slate-700 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+            :class="{ 'text-red-600 hover:bg-red-50 focus-visible:bg-red-50': action.danger }"
             :disabled="action.disabled"
             @click="handleAction(action.key)"
           >
-            <span class="menu-icon-wrap">
-              <component v-if="action.icon" :is="resolveIcon(action.icon)" class="menu-icon" />
+            <span class="flex h-4 w-4 flex-shrink-0 items-center justify-center">
+              <component v-if="action.icon" :is="resolveIcon(action.icon)" class="h-4 w-4" />
             </span>
-            <span class="menu-label">{{ action.label }}</span>
+            <span class="flex-1">{{ action.label }}</span>
           </button>
         </template>
       </div>

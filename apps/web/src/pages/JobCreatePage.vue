@@ -164,7 +164,7 @@ function handleCancel() {
 </script>
 
 <template>
-  <div class="page-container job-create-page">
+  <div class="page-shell job-create-page">
     <PageHeader
       title="创建任务"
       subtitle="定义一个新的自动化任务，支持定时调度和手动触发"
@@ -176,12 +176,12 @@ function handleCancel() {
       <template #icon><icon-clock-circle /></template>
     </PageHeader>
 
-    <div class="form-layout">
+    <div class="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,_1.45fr)_minmax(16em,_0.85fr)]">
       <!-- 表单卡片 -->
-      <ui-card class="form-card">
+      <ui-card class="min-w-0">
         <template #title>
-          <div class="card-title-row">
-            <icon-plus class="card-title-icon" />
+          <div class="flex items-center gap-2">
+            <icon-plus class="h-5 w-5 text-[var(--accent)]" />
             <span>基本信息</span>
           </div>
         </template>
@@ -193,13 +193,13 @@ function handleCancel() {
         />
 
         <!-- Cron 快捷预设 -->
-        <div v-if="formData.schedule_enabled" class="cron-presets">
-          <div class="presets-label">快捷预设：</div>
-          <div class="presets-list">
+        <div v-if="formData.schedule_enabled" class="mt-6 rounded-xl border border-dashed p-4 border-slate-200 bg-slate-50">
+          <div class="text-xs font-semibold uppercase tracking-[0.08em] text-amber-700">快捷预设：</div>
+          <div class="mt-3 flex flex-wrap gap-2">
             <ui-tag
               v-for="preset in cronPresets"
               :key="preset.value"
-              class="preset-tag"
+              class="cursor-pointer [transition-property:transform] hover:-translate-y-px"
               @click="applyCronPreset(preset.value)"
             >
               {{ preset.label }}
@@ -209,18 +209,18 @@ function handleCancel() {
       </ui-card>
 
       <!-- 说明卡片 -->
-      <ui-card class="info-card">
+      <ui-card class="min-w-0 lg:sticky lg:top-[var(--space-6)]">
         <template #title>
-          <div class="card-title-row">
-            <icon-clock-circle class="card-title-icon" />
+          <div class="flex items-center gap-2">
+            <icon-clock-circle class="h-5 w-5 text-[var(--accent)]" />
             <span>Cron 表达式说明</span>
           </div>
         </template>
 
-        <div class="cron-help">
-          <div class="cron-format">
-            <code class="format-code">* * * * *</code>
-            <div class="format-desc">
+        <div class="flex flex-col gap-4">
+          <div class="rounded-xl border p-5 border-slate-200 bg-slate-50 shadow-sm">
+            <code class="inline-flex rounded-lg px-3 py-1 text-sm font-semibold text-slate-700 bg-slate-100">* * * * *</code>
+            <div class="mt-4 flex flex-col gap-1 font-mono text-xs text-slate-500">
               <span>│ │ │ │ │</span>
               <span>│ │ │ │ └─ 星期几 (0-6, 0=周日)</span>
               <span>│ │ │ └─── 月份 (1-12)</span>
@@ -230,26 +230,26 @@ function handleCancel() {
             </div>
           </div>
 
-          <div class="cron-examples">
-            <h4 class="examples-title">常用示例</h4>
-            <div class="example-list">
-              <div class="example-item">
+          <div>
+            <h4 class="mb-3 text-sm font-semibold text-slate-900">常用示例</h4>
+            <div class="flex flex-col gap-3">
+              <div class="flex items-start gap-3 rounded-xl border p-4 border-slate-200 bg-slate-50 shadow-sm flex-col">
                 <code>0 * * * *</code>
                 <span>每小时执行一次</span>
               </div>
-              <div class="example-item">
+              <div class="flex items-start gap-3 rounded-xl border p-4 border-slate-200 bg-slate-50 shadow-sm flex-col">
                 <code>0 0 * * *</code>
                 <span>每天 0 点执行</span>
               </div>
-              <div class="example-item">
+              <div class="flex items-start gap-3 rounded-xl border p-4 border-slate-200 bg-slate-50 shadow-sm flex-col">
                 <code>0 9 * * 1-5</code>
                 <span>工作日上午 9 点执行</span>
               </div>
-              <div class="example-item">
+              <div class="flex items-start gap-3 rounded-xl border p-4 border-slate-200 bg-slate-50 shadow-sm flex-col">
                 <code>*/30 * * * *</code>
                 <span>每 30 分钟执行一次</span>
               </div>
-              <div class="example-item">
+              <div class="flex items-start gap-3 rounded-xl border p-4 border-slate-200 bg-slate-50 shadow-sm flex-col">
                 <code>0 0 1 * *</code>
                 <span>每月 1 号 0 点执行</span>
               </div>
@@ -260,7 +260,7 @@ function handleCancel() {
     </div>
 
     <!-- 底部操作栏 -->
-    <div class="form-footer">
+    <div class="flex items-center justify-end gap-3 rounded-xl border px-5 py-4 sticky bottom-[var(--space-4)] z-10 border-slate-200 bg-slate-50 shadow-sm backdrop-blur-xl backdrop-saturate-150 max-md:flex-col max-md:items-stretch max-md:bottom-[var(--space-3)]">
       <ui-button size="large" @click="handleCancel">
         取消
       </ui-button>

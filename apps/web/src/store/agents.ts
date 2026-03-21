@@ -10,6 +10,20 @@ export const useAgentsStore = defineStore("agents", () => {
   const loading = ref(false);
   const error = ref<string | null>(null);
 
+  function patchAgent(id: number, patch: Partial<Agent>) {
+    agents.value = agents.value.map((agent) =>
+      agent.id === id ? { ...agent, ...patch } : agent
+    );
+  }
+
+  function syncAgentStatus(status: AgentStatus) {
+    patchAgent(status.id, {
+      runtime_state: status.runtime_state,
+      desired_state: status.desired_state,
+      last_error: status.last_error ?? "",
+    });
+  }
+
   async function fetchAgents() {
     loading.value = true;
     error.value = null;
@@ -30,15 +44,18 @@ export const useAgentsStore = defineStore("agents", () => {
 
   async function start(id: number) {
     await startAgent(id);
+    patchAgent(id, { desired_state: "running" });
   }
 
   async function stop(id: number) {
     await stopAgent(id);
+    patchAgent(id, { desired_state: "stopped" });
   }
 
   async function fetchStatus(id: number) {
     const status = await getAgentStatus(id);
     statuses.value = { ...statuses.value, [id]: status };
+    syncAgentStatus(status);
     return status;
   }
 
@@ -47,6 +64,7 @@ export const useAgentsStore = defineStore("agents", () => {
     statuses,
     loading,
     error,
+    patchAgent,
     fetchAgents,
     create,
     start,

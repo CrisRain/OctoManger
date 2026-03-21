@@ -4,19 +4,21 @@ import { cx } from "../utils";
 
 interface Props {
   rows?: number;
-  lineHeight?: number;
-  lineSpacing?: number;
+  lineHeight?: number | string;
+  lineSpacing?: number | string;
   widths?: Array<number | string>;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   rows: 1,
-  lineHeight: 14,
-  lineSpacing: 8,
+  lineHeight: "0.875em",
+  lineSpacing: "0.5em",
   widths: () => ["100%"],
 });
 
 const attrs = useAttrs();
+const normalizeLength = (value: number | string) =>
+  typeof value === "number" ? `${value / 16}em` : String(value);
 </script>
 
 <template>
@@ -26,8 +28,8 @@ const attrs = useAttrs();
       :key="index"
       class="ui-skeleton-line-row animate-pulse rounded bg-slate-200"
       :style="{
-        height: `${props.lineHeight}px`,
-        marginTop: index === 0 ? '0px' : `${props.lineSpacing}px`,
+        blockSize: normalizeLength(props.lineHeight),
+        marginTop: index === 0 ? '0' : normalizeLength(props.lineSpacing),
         width: String(props.widths[index] ?? props.widths[props.widths.length - 1] ?? '100%'),
       }"
     />

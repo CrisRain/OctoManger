@@ -1,11 +1,8 @@
 <script setup lang="ts">
-import { ref, computed, watch } from "vue";
-import { useRoute, useRouter } from "vue-router";
-import { Message } from "@/lib/feedback";
 import { useAccounts } from "@/composables/useAccounts";
+import { useMessage } from "@/composables";
 import { useExecuteAccount } from "@/composables/useAccounts";
 import { usePlugins } from "@/composables/usePlugins";
-import { PageHeader } from "@/components/index";
 import { to } from "@/router/registry";
 import type {
   AccountExecuteResult,
@@ -16,6 +13,7 @@ import type {
 const route = useRoute();
 const router = useRouter();
 const accountId = Number(route.params.id);
+const message = useMessage();
 
 const { data: accounts, loading } = useAccounts();
 const { data: plugins } = usePlugins();
@@ -59,12 +57,12 @@ const hasUITabs = computed(() =>
 // Active UI sub-tab (within the Actions tab)
 const activeUITab = ref<string>("");
 
-const uiTabs = computed(() =>
+const pluginActionTabs = computed(() =>
   (plugin.value?.manifest.ui?.tabs ?? []).filter(tab => tab.context !== "create")
 );
 
 watch(
-  uiTabs,
+  pluginActionTabs,
   (tabs) => {
     if (!tabs.length) {
       activeUITab.value = "";
@@ -113,12 +111,12 @@ async function executeButton(button: PluginUIButton) {
     const res = await executeAccount.execute(accountId, button.action, params);
     execResults.value[button.action] = res;
     if (res.status === "ok") {
-      Message.success("执行成功");
+      message.success("执行成功");
     } else {
-      Message.warning(`执行失败: ${res.error_message ?? res.error_code}`);
+      message.warning(`执行失败: ${res.error_message ?? res.error_code}`);
     }
   } catch (e) {
-    Message.error(e instanceof Error ? e.message : "执行失败");
+    message.error(e instanceof Error ? e.message : "执行失败");
   } finally {
     execLoading.value[button.action] = false;
   }
@@ -155,32 +153,31 @@ async function handleExecute() {
     const res = await executeAccount.execute(accountId, selectedAction.value, params);
     execResult.value = res;
     if (res.status === "ok") {
-      Message.success("执行成功");
+      message.success("执行成功");
     } else {
-      Message.warning(`执行失败: ${res.error_message ?? res.error_code}`);
+      message.warning(`执行失败: ${res.error_message ?? res.error_code}`);
     }
   } catch (e) {
-    Message.error(e instanceof Error ? e.message : "执行失败");
+    message.error(e instanceof Error ? e.message : "执行失败");
   }
 }
 
 const statusColor: Record<string, string> = { active: "green", pending: "gray", inactive: "gray" };
-const statusDot: Record<string, string>   = { active: "online", pending: "neutral", inactive: "neutral" };
+const statusDot: Record<string, string> = { active: "bg-emerald-500 animate-pulse", pending: "bg-slate-400", inactive: "bg-slate-300" };
 const actionCount = computed(() => plugin.value?.manifest.actions?.length ?? 0);
 const tagCount = computed(() => account.value?.tags?.length ?? 0);
 
 const pluginDisplayName = computed(() => {
   if (plugin.value?.manifest.name) return plugin.value.manifest.name;
-  return account.value?.account_type_key || "未匹配模型";
+  return account.value?.account_type_key || "未匹配插件";
 });
 
 const overviewDescription = computed(() => {
   if (!account.value) return "";
-  if (plugin.value?.manifest.description) return plugin.value.manifest.description;
   if (account.value.account_type_key) {
-    return `当前账号绑定到 ${account.value.account_type_key} 模型，下面集中展示运行信息、凭据配置和可执行动作。`;
+    return `当前账号绑定到 ${pluginDisplayName.value}，这里集中展示状态、凭据配置和可执行操作。`;
   }
-  return "下面集中展示运行信息、凭据配置和可执行动作。";
+  return "这里集中展示状态、凭据配置和可执行操作。";
 });
 
 const overviewTagPreview = computed(() => {
@@ -219,99 +216,99 @@ const selectedActionMeta = computed(() =>
 </script>
 
 <template>
-  <div class="page-container account-page">
+  <div class="page-shell">
     <PageHeader
-      :title="account ? account.identifier : '账号资源详情'"
+      :title="account ? account.identifier : '账号详情'"
       icon-bg="var(--accent-light)"
       icon-color="var(--accent)"
       :back-to="to.accounts.list()"
-      back-label="返回列表"
+      back-label="返回账号列表"
     >
       <template #icon><icon-user /></template>
       <template #subtitle>
-        <code v-if="account" class="key-badge">模型: {{ account.account_type_key || "—" }}</code>
+        <code v-if="account" class="inline-flex items-center rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-xs font-mono text-slate-600">账号类型: {{ account.account_type_key || "—" }}</code>
       </template>
       <template #actions>
-        <div v-if="account" class="account-header-actions">
-          <div class="status-cell">
-            <span class="status-dot-large" :class="statusDot[account.status] ?? 'neutral'" />
-            <ui-tag :color="statusColor[account.status] ?? 'gray'" class="status-tag-pill">{{ account.status }}</ui-tag>
+        <div v-if="account" class="flex items-center gap-3 flex-wrap justify-end gap-2">
+          <div class="inline-flex items-center gap-1.5">
+            <span class="inline-block h-2 w-2 flex-shrink-0 rounded-full transition-colors" :class="statusDot[account.status] ?? 'neutral'" />
+            <ui-tag :color="statusColor[account.status] ?? 'gray'">{{ account.status }}</ui-tag>
           </div>
-          <ui-button type="primary" class="edit-btn" @click="router.push(to.accounts.edit(accountId))">
+          <ui-button type="primary" @click="router.push(to.accounts.edit(accountId))">
             <template #icon><icon-edit /></template>
-            配置与编辑
+            编辑账号
           </ui-button>
         </div>
       </template>
     </PageHeader>
 
-    <div v-if="loading" class="empty-wrap">
-      <ui-spin :size="36" />
+    <div v-if="loading" class="flex flex-col items-center justify-center gap-4 py-20 text-center">
+      <ui-spin size="2.25em" />
     </div>
-    <div v-else-if="!account" class="empty-wrap">
-      <icon-user class="empty-icon" />
-      <p class="empty-msg">未找到该账号。</p>
-      <ui-button @click="router.push(to.accounts.list())">返回列表</ui-button>
+    <div v-else-if="!account" class="flex flex-col items-center justify-center gap-4 py-20 text-center">
+      <icon-user class="h-12 w-12 text-slate-400" />
+      <p class="text-sm text-slate-500">未找到该账号。</p>
+      <ui-button @click="router.push(to.accounts.list())">返回账号列表</ui-button>
     </div>
 
-    <div v-else-if="account" class="account-shell">
-      <section class="account-overview">
-        <div class="overview-copy">
-          <span class="overview-eyebrow">账号资源概览</span>
-          <h2 class="overview-title">{{ account.identifier }}</h2>
-          <p class="overview-description">{{ overviewDescription }}</p>
+    <div v-else-if="account" class="flex flex-col gap-6">
+      <section class="flex flex-col gap-6 rounded-xl border p-6 lg:flex-row border-slate-200 bg-slate-50 shadow-sm backdrop-blur-xl backdrop-saturate-150">
+        <div class="flex flex-1 flex-col gap-3">
+          <span class="text-xs font-semibold uppercase tracking-wider text-[var(--accent)]">账号资源概览</span>
+          <h2 class="m-0 text-2xl font-bold text-slate-900">{{ account.identifier }}</h2>
+          <p class="text-sm text-slate-500">{{ overviewDescription }}</p>
 
-          <div class="overview-pills">
-            <div class="overview-status-chip">
-              <span class="status-dot-large" :class="statusDot[account.status] ?? 'neutral'" />
-              <ui-tag :color="statusColor[account.status] ?? 'gray'" class="status-tag-pill">
+          <div class="flex flex-wrap items-center gap-2">
+            <div class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm border-slate-200 bg-slate-50">
+              <span class="inline-block h-2 w-2 flex-shrink-0 rounded-full transition-colors" :class="statusDot[account.status] ?? 'neutral'" />
+              <ui-tag :color="statusColor[account.status] ?? 'gray'">
                 {{ account.status }}
               </ui-tag>
             </div>
 
-            <div class="overview-meta-chip">
-              <span>类型模型</span>
-              <code class="overview-meta-key">{{ account.account_type_key || "—" }}</code>
+            <div class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs text-slate-500 border-slate-200 bg-slate-50">
+              <span>账号类型</span>
+              <code class="text-xs font-semibold text-slate-900 font-[var(--font-mono)]">{{ account.account_type_key || "—" }}</code>
             </div>
 
-            <div class="overview-meta-chip">
+            <div class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs text-slate-500 border-slate-200 bg-slate-50">
               <span>标签预览</span>
-              <span class="overview-meta-value">{{ overviewTagPreview }}</span>
+              <span class="font-medium text-slate-900">{{ overviewTagPreview }}</span>
             </div>
           </div>
         </div>
 
-        <div class="overview-stats">
-          <div class="overview-stat">
-            <span class="overview-stat-label">绑定模型</span>
-            <div class="overview-stat-value">
-              <span class="overview-stat-primary">{{ pluginDisplayName }}</span>
+        <div class="grid grid-cols-2 gap-3 lg:min-w-[240px]">
+          <div class="flex flex-col gap-1 rounded-xl border p-3 border-slate-200 bg-slate-50 shadow-sm">
+            <span class="text-xs text-slate-500">关联插件</span>
+            <div class="flex items-center gap-1">
+              <span class="truncate text-sm font-semibold text-slate-900">{{ pluginDisplayName }}</span>
             </div>
-            <span class="overview-stat-sub">{{ account.account_type_key || "未注册模型" }}</span>
+            <span class="text-xs text-slate-500">{{ account.account_type_key || "未匹配插件" }}</span>
           </div>
 
-          <div class="overview-stat">
-            <span class="overview-stat-label">凭据字段</span>
-            <div class="overview-stat-value">
-              <span class="overview-stat-number">{{ specEntries.length }}</span>
+          <div class="flex flex-col gap-1 rounded-xl border p-3 border-slate-200 bg-slate-50 shadow-sm">
+            <span class="text-xs text-slate-500">凭据字段</span>
+            <div class="flex items-center gap-1">
+              <span class="text-2xl font-bold text-slate-900">{{ specEntries.length }}</span>
             </div>
-            <span class="overview-stat-sub">当前 Spec 项数量</span>
+            <span class="text-xs text-slate-500">当前 Spec 项数量</span>
           </div>
 
-          <div class="overview-stat">
-            <span class="overview-stat-label">可用动作</span>
-            <div class="overview-stat-value">
-              <span class="overview-stat-number">{{ actionCount }}</span>
+          <div class="flex flex-col gap-1 rounded-xl border p-3 border-slate-200 bg-slate-50 shadow-sm">
+            <span class="text-xs text-slate-500">可用动作</span>
+            <div class="flex items-center gap-1">
+              <span class="text-2xl font-bold text-slate-900">{{ actionCount }}</span>
             </div>
-            <span class="overview-stat-sub">{{ hasUITabs ? "支持分组动作面板" : "使用基础动作面板" }}</span>
+            <span class="text-xs text-slate-500">{{ hasUITabs ? "支持分组动作面板" : "使用基础动作面板" }}</span>
           </div>
 
-          <div class="overview-stat">
-            <span class="overview-stat-label">标签数量</span>
-            <div class="overview-stat-value">
-              <span class="overview-stat-number">{{ tagCount }}</span>
+          <div class="flex flex-col gap-1 rounded-xl border p-3 border-slate-200 bg-slate-50 shadow-sm">
+            <span class="text-xs text-slate-500">标签数量</span>
+            <div class="flex items-center gap-1">
+              <span class="text-2xl font-bold text-slate-900">{{ tagCount }}</span>
             </div>
-            <span class="overview-stat-sub">{{ overviewTagPreview }}</span>
+            <span class="text-xs text-slate-500">{{ overviewTagPreview }}</span>
           </div>
         </div>
       </section>
@@ -319,122 +316,122 @@ const selectedActionMeta = computed(() =>
       <ui-tabs
         v-model:active-key="activeTab"
         :destroy-on-hide="false"
-        class="detail-tabs premium-tabs account-tabs"
+        class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
       >
 
         <!-- ── Tab 1: Info ─────────────────────────────────────────────────── -->
         <ui-tab-pane key="info" title="基础运行信息">
-          <div class="tab-panel">
-            <div class="info-grid">
-              <ui-card class="premium-card info-runtime-card">
+          <div class="pt-4">
+            <div class="flex flex-col gap-4 lg:flex-row">
+              <ui-card class="min-w-0 flex-1">
                 <template #title>
-                  <div class="card-header-with-icon">
-                    <div class="card-icon-box"><icon-info-circle /></div>
+                  <div class="flex items-center gap-2">
+                    <div class="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-[var(--accent)]/10 text-[var(--accent)]"><icon-info-circle /></div>
                     基本信息与状态
                   </div>
                 </template>
-                <div class="info-card-body">
-                  <section class="panel-hero panel-hero--account">
-                    <div class="panel-hero-copy">
-                      <span class="panel-kicker">Account Profile</span>
-                      <h3 class="panel-title">{{ account.identifier }}</h3>
-                      <p class="panel-description">
-                        当前账号挂载在 <code class="inline-code-chip">{{ pluginDisplayName }}</code>
-                        模型下，可在这里快速查看资源身份、状态与标签概览。
+                <div class="flex flex-col gap-5">
+                  <section class="mb-5 flex flex-col gap-4 rounded-xl border p-5 md:flex-row md:items-center md:justify-between border-slate-200 bg-slate-50">
+                    <div class="flex flex-1 flex-col gap-1.5">
+                      <span class="text-xs font-semibold uppercase tracking-wider text-[var(--accent)]">Account Profile</span>
+                      <h3 class="m-0 text-base font-bold text-slate-900">{{ account.identifier }}</h3>
+                      <p class="text-xs leading-relaxed text-slate-500">
+                        当前账号关联插件 <code class="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-mono text-slate-600">{{ pluginDisplayName }}</code>，
+                        可以在这里查看资源状态、标签和凭据配置。
                       </p>
                     </div>
 
-                    <div class="hero-side hero-side--status">
-                      <span class="hero-side-label">运行状态</span>
-                      <div class="status-cell status-cell--hero">
-                        <span class="status-dot-large" :class="statusDot[account.status] ?? 'neutral'" />
-                        <ui-tag :color="statusColor[account.status] ?? 'gray'" class="status-tag-pill">{{ account.status }}</ui-tag>
+                    <div class="flex flex-shrink-0 flex-col items-center gap-1 text-center">
+                      <span class="text-xs text-slate-500">运行状态</span>
+                      <div class="inline-flex items-center gap-1.5">
+                        <span class="inline-block h-2 w-2 flex-shrink-0 rounded-full transition-colors" :class="statusDot[account.status] ?? 'neutral'" />
+                        <ui-tag :color="statusColor[account.status] ?? 'gray'">{{ account.status }}</ui-tag>
                       </div>
                     </div>
                   </section>
 
-                  <div class="info-stat-grid">
-                    <article class="info-stat-card">
-                      <span class="info-stat-label">数据库主键</span>
-                      <span class="info-stat-value mono-text">#{{ account.id }}</span>
-                      <span class="info-stat-sub">系统资源编号</span>
+                  <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    <article class="flex flex-col gap-1 rounded-xl border p-4 md:p-5 border-slate-200 bg-slate-50">
+                      <span class="text-xs text-slate-500">数据库主键</span>
+                      <span class="text-xl font-bold text-slate-900 font-mono">#{{ account.id }}</span>
+                      <span class="text-xs text-slate-500">系统资源编号</span>
                     </article>
 
-                    <article class="info-stat-card">
-                      <span class="info-stat-label">派生应用模型</span>
-                      <code class="info-stat-chip">{{ account.account_type_key || "—" }}</code>
-                      <span class="info-stat-sub">当前绑定类型</span>
+                    <article class="flex flex-col gap-1 rounded-xl border p-4 md:p-5 border-slate-200 bg-slate-50">
+                      <span class="text-xs text-slate-500">账号类型</span>
+                      <code class="inline-flex items-center rounded bg-slate-200 px-2 py-0.5 text-xs font-mono font-semibold text-slate-700">{{ account.account_type_key || "—" }}</code>
+                      <span class="text-xs text-slate-500">当前绑定类型</span>
                     </article>
 
-                    <article class="info-stat-card">
-                      <span class="info-stat-label">标签数量</span>
-                      <span class="info-stat-value">{{ tagCount }}</span>
-                      <span class="info-stat-sub">{{ overviewTagPreview }}</span>
+                    <article class="flex flex-col gap-1 rounded-xl border p-4 md:p-5 border-slate-200 bg-slate-50">
+                      <span class="text-xs text-slate-500">标签数量</span>
+                      <span class="text-xl font-bold text-slate-900">{{ tagCount }}</span>
+                      <span class="text-xs text-slate-500">{{ overviewTagPreview }}</span>
                     </article>
 
-                    <article class="info-stat-card">
-                      <span class="info-stat-label">可用动作</span>
-                      <span class="info-stat-value">{{ actionCount }}</span>
-                      <span class="info-stat-sub">{{ hasUITabs ? "分组动作面板" : "基础动作面板" }}</span>
+                    <article class="flex flex-col gap-1 rounded-xl border p-4 md:p-5 border-slate-200 bg-slate-50">
+                      <span class="text-xs text-slate-500">可用动作</span>
+                      <span class="text-xl font-bold text-slate-900">{{ actionCount }}</span>
+                      <span class="text-xs text-slate-500">{{ hasUITabs ? "分组动作面板" : "基础动作面板" }}</span>
                     </article>
                   </div>
 
-                  <section class="tag-shelf">
-                    <div class="tag-shelf-header">
-                      <span class="tag-shelf-title">分类标签</span>
-                      <span class="tag-shelf-note">Tags / Labels</span>
+                  <section class="mt-5 rounded-xl border p-5 border-slate-200 bg-slate-50">
+                    <div class="flex items-baseline justify-between">
+                      <span class="text-sm font-semibold text-slate-900">分类标签</span>
+                      <span class="text-xs text-slate-500">Tags / Labels</span>
                     </div>
 
-                    <div v-if="account.tags?.length" class="tags-cell tags-cell--shelf">
-                      <ui-tag v-for="tag in account.tags" :key="tag" class="status-tag-pill tag-pill">
+                    <div v-if="account.tags?.length" class="flex flex-wrap items-center gap-1 gap-1.5">
+                      <ui-tag v-for="tag in account.tags" :key="tag">
                         {{ tag }}
                       </ui-tag>
                     </div>
-                    <div v-else class="tag-shelf-empty">
+                    <div v-else class="text-sm italic text-slate-400">
                       当前账号还没有设置任何标签
                     </div>
                   </section>
                 </div>
               </ui-card>
 
-              <ui-card v-if="specEntries.length" class="premium-card info-spec-card">
+              <ui-card v-if="specEntries.length" class="min-w-0 flex-1">
                 <template #title>
-                  <div class="card-header-with-icon">
-                    <div class="card-icon-box orange"><icon-lock /></div>
+                  <div class="flex items-center gap-2">
+                    <div class="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-orange-50 text-orange-600"><icon-lock /></div>
                     凭据密钥与 Spec 结构
                   </div>
                 </template>
-                <div class="spec-card-body">
-                  <section class="panel-hero panel-hero--spec">
-                    <div class="panel-hero-copy">
-                      <span class="panel-kicker">Credential Payload</span>
-                      <h3 class="panel-title">Spec 结构映射</h3>
-                      <p class="panel-description">
+                <div class="flex flex-col gap-4">
+                  <section class="mb-5 flex flex-col gap-4 rounded-xl border p-5 md:flex-row md:items-center md:justify-between border-slate-200 bg-slate-50">
+                    <div class="flex flex-1 flex-col gap-1.5">
+                      <span class="text-xs font-semibold uppercase tracking-wider text-[var(--accent)]">Credential Payload</span>
+                      <h3 class="m-0 text-base font-bold text-slate-900">Spec 结构映射</h3>
+                      <p class="text-xs leading-relaxed text-slate-500">
                         每个字段拆成独立条目展示，敏感值自动脱敏，方便快速核对当前账号的配置结构。
                       </p>
                     </div>
 
-                    <div class="hero-side hero-side--count">
-                      <span class="hero-side-label">字段总数</span>
-                      <span class="hero-count">{{ specEntries.length }}</span>
+                    <div class="flex flex-shrink-0 flex-col items-center gap-1 text-center">
+                      <span class="text-xs text-slate-500">字段总数</span>
+                      <span class="text-3xl font-bold text-slate-900">{{ specEntries.length }}</span>
                     </div>
                   </section>
 
-                  <div class="spec-grid">
+                  <div class="flex flex-col gap-2">
                     <article
                       v-for="[key, val] in specEntries"
                       :key="key"
-                      class="spec-entry"
-                      :class="{ 'spec-entry--secret': isSecret(key) }"
+                      class="flex flex-col gap-2 rounded-lg border px-4 py-3 sm:flex-row sm:items-center sm:justify-between border-slate-200 bg-slate-50"
+                      :class="{ 'border-amber-100 bg-amber-50/60': isSecret(key) }"
                     >
-                      <div class="spec-entry-side">
-                        <span class="spec-entry-label">字段名</span>
-                        <code class="spec-entry-code">{{ key }}</code>
+                      <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+                        <span class="text-xs text-slate-500">字段名</span>
+                        <code class="text-xs font-mono font-semibold text-slate-900">{{ key }}</code>
                       </div>
 
-                      <div class="spec-entry-side spec-entry-side--value">
-                        <span class="spec-entry-label">{{ describeSpecValue(key, val) }}</span>
-                        <span class="spec-entry-value mono-text" :class="{ 'spec-entry-value--secret': isSecret(key) }">
+                      <div class="flex min-w-0 flex-1 flex-col gap-0.5 flex-[2]">
+                        <span class="text-xs text-slate-500">{{ describeSpecValue(key, val) }}</span>
+                        <span class="break-all text-sm text-slate-900 font-mono" :class="{ 'tracking-widest text-amber-700': isSecret(key) }">
                           {{ displaySpecValue(key, val) }}
                         </span>
                       </div>
@@ -443,17 +440,17 @@ const selectedActionMeta = computed(() =>
                 </div>
               </ui-card>
 
-              <ui-card v-else class="premium-card info-spec-card">
+              <ui-card v-else class="min-w-0 flex-1">
                 <template #title>
-                  <div class="card-header-with-icon">
-                    <div class="card-icon-box gray"><icon-lock /></div>
+                  <div class="flex items-center gap-2">
+                    <div class="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500"><icon-lock /></div>
                     凭据密钥与 Spec 结构
                   </div>
                 </template>
-                <div class="spec-card-empty">
-                  <div class="spec-card-empty-badge">0</div>
-                  <p class="spec-card-empty-title">当前模型未要求任何凭据字段</p>
-                  <p class="spec-card-empty-copy">如果后续插件补充了 Spec 结构，这里会自动展示对应字段。</p>
+                <div class="flex flex-col items-center gap-2 py-10 text-center">
+                  <div class="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-xl font-bold text-slate-400">0</div>
+                  <p class="text-sm font-semibold text-slate-900">当前账号未配置任何凭据字段</p>
+                  <p class="text-xs text-slate-500">如果后续补充了 Spec 结构，这里会自动展示对应字段。</p>
                 </div>
               </ui-card>
             </div>
@@ -462,119 +459,119 @@ const selectedActionMeta = computed(() =>
 
         <!-- ── Tab 2: Actions ─────────────────────────────────────────────── -->
         <ui-tab-pane key="actions" title="操作">
-          <div class="tab-panel">
-            <div v-if="!plugin" class="empty-wrap tab-empty">
-              <icon-apps class="empty-icon" />
-              <p class="empty-msg">
-                未找到插件 <code class="key-badge">{{ account.account_type_key }}</code>，
+          <div class="pt-4">
+            <div v-if="!plugin" class="flex flex-col items-center justify-center gap-4 py-20 text-center">
+              <icon-apps class="h-12 w-12 text-slate-400" />
+              <p class="text-sm text-slate-500">
+                未找到插件 <code class="inline-flex items-center rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-xs font-mono text-slate-600">{{ account.account_type_key }}</code>，
                 请确认 Worker 已启动并注册该插件。
               </p>
             </div>
 
             <template v-else>
-              <section class="actions-overview-panel">
-                <div class="actions-overview-copy">
-                  <span class="panel-kicker">Action Workbench</span>
-                  <h3 class="actions-overview-title">账号动作工作台</h3>
-                  <p class="panel-description">
+              <section class="mb-5 flex flex-col items-start gap-4 rounded-xl border p-5 sm:flex-row border-slate-200 bg-slate-50 shadow-sm">
+                <div class="flex flex-1 flex-col gap-1.5">
+                  <span class="text-xs font-semibold uppercase tracking-wider text-[var(--accent)]">Action Workbench</span>
+                  <h3 class="m-0 text-base font-bold text-slate-900">账号操作面板</h3>
+                  <p class="text-xs leading-relaxed text-slate-500">
                     {{ hasUITabs
-                      ? "按分组浏览插件暴露的动作能力，带表单的动作会在同一工作台内直接配置和执行。"
-                      : "当前插件提供基础动作列表，可在左侧选择动作，并在右侧构造 JSON 参数后执行。"
+                      ? "按分组查看插件提供的操作，带表单的操作可以直接在当前页面配置并执行。"
+                      : "当前插件提供基础操作列表，可在左侧选择操作，并在右侧填写 JSON 参数后执行。"
                     }}
                   </p>
                 </div>
 
-                <div class="actions-overview-stats">
-                  <article class="actions-mini-stat">
-                    <span class="actions-mini-label">总动作数</span>
-                    <span class="actions-mini-value">{{ actionCount }}</span>
+                <div class="flex flex-shrink-0 flex-wrap items-center gap-4">
+                  <article class="flex flex-col items-center gap-0.5 px-3 text-center">
+                    <span class="text-xs text-slate-500">总动作数</span>
+                    <span class="text-xl font-bold text-slate-900">{{ actionCount }}</span>
                   </article>
-                  <article class="actions-mini-stat">
-                    <span class="actions-mini-label">分组标签</span>
-                    <span class="actions-mini-value">{{ hasUITabs ? uiTabs.length : 1 }}</span>
+                  <article class="flex flex-col items-center gap-0.5 px-3 text-center">
+                    <span class="text-xs text-slate-500">分组数量</span>
+                    <span class="text-xl font-bold text-slate-900">{{ hasUITabs ? pluginActionTabs.length : 1 }}</span>
                   </article>
-                  <article class="actions-mini-stat">
-                    <span class="actions-mini-label">工作模式</span>
-                    <span class="actions-mini-text">{{ hasUITabs ? "分组工作台" : "基础执行台" }}</span>
+                  <article class="flex flex-col items-center gap-0.5 px-3 text-center">
+                    <span class="text-xs text-slate-500">展示方式</span>
+                    <span class="text-xs font-medium text-slate-900">{{ hasUITabs ? "分组视图" : "基础视图" }}</span>
                   </article>
                 </div>
               </section>
 
               <!-- ── Custom UI: ui.tabs ──────────────────────────────────────── -->
               <template v-if="hasUITabs">
-                <div class="action-workbench action-workbench--custom">
-                  <ui-tabs v-model:active-key="activeUITab" type="card" :destroy-on-hide="false" class="ui-tabs action-tab-switcher">
+                <div class="rounded-xl border p-4 md:p-5 border-slate-200 bg-slate-50">
+                  <ui-tabs v-model:active-key="activeUITab" type="card" :destroy-on-hide="false" class="ui-tabs">
                     <ui-tab-pane
-                      v-for="tab in uiTabs"
+                      v-for="tab in pluginActionTabs"
                       :key="tab.key"
                       :title="tab.label"
                     >
-                      <div class="action-stage">
-                        <section class="action-stage-hero">
-                          <div class="action-stage-copy">
-                            <span class="panel-kicker">Action Group</span>
-                            <h3 class="action-stage-title">{{ tab.label }}</h3>
-                            <p class="action-stage-description">
-                              这个分组下共有 {{ countTabButtons(tab) }} 个动作，可直接在当前页面完成参数填写和执行。
+                      <div class="p-5">
+                        <section class="mb-5 flex flex-col items-start gap-4 rounded-xl border p-4 sm:flex-row border-slate-200 bg-slate-50">
+                          <div class="flex flex-1 flex-col gap-1.5">
+                            <span class="text-xs font-semibold uppercase tracking-wider text-[var(--accent)]">Action Group</span>
+                            <h3 class="m-0 text-base font-bold text-slate-900">{{ tab.label }}</h3>
+                            <p class="text-xs text-slate-500">
+                              这个分组下共有 {{ countTabButtons(tab) }} 个操作，可直接在当前页面填写参数并执行。
                             </p>
                           </div>
 
-                          <div class="hero-side hero-side--count">
-                            <span class="hero-side-label">动作数量</span>
-                            <span class="hero-count">{{ countTabButtons(tab) }}</span>
+                          <div class="flex flex-shrink-0 flex-col items-center gap-1 text-center">
+                            <span class="text-xs text-slate-500">动作数量</span>
+                            <span class="text-3xl font-bold text-slate-900">{{ countTabButtons(tab) }}</span>
                           </div>
                         </section>
 
-                        <div class="ui-section-stack">
+                        <div class="flex flex-col gap-4">
                           <section
                             v-for="section in tab.sections"
                             :key="section.title"
-                            class="ui-section-card"
+                            class="rounded-xl border p-4 md:p-5 border-slate-200 bg-white"
                           >
-                            <div class="ui-section-head">
-                              <div class="ui-section-copy">
-                                <p class="ui-section-title">{{ section.title || tab.label }}</p>
-                                <p class="ui-section-subtitle">{{ section.buttons.length }} 个动作待执行</p>
+                            <div class="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+                              <div class="flex flex-col gap-0.5">
+                                <p class="text-sm font-semibold text-slate-900">{{ section.title || tab.label }}</p>
+                                <p class="text-xs text-slate-500">{{ section.buttons.length }} 个操作</p>
                               </div>
                             </div>
 
-                            <div class="ui-command-grid">
+                            <div class="grid grid-cols-1 gap-4 p-4 lg:grid-cols-2">
                               <article
                                 v-for="button in section.buttons"
                                 :key="button.action"
-                                class="ui-command-card"
+                                class="flex flex-col gap-4 rounded-lg border p-4 border-slate-200 bg-slate-50"
                               >
-                                <div class="ui-command-head">
-                                  <div class="ui-command-copy">
-                                    <code class="ui-command-code">{{ button.action }}</code>
-                                    <h4 class="ui-command-title">{{ button.label }}</h4>
-                                    <div class="ui-command-meta">
-                                      <ui-tag size="small" :color="button.mode === 'job' ? 'twblue' : 'gray'" class="mode-tag-pill">
+                                <div class="flex items-start justify-between gap-3">
+                                  <div class="flex flex-1 flex-col gap-1.5">
+                                    <code class="text-xs font-mono text-[var(--accent)]">{{ button.action }}</code>
+                                    <h4 class="m-0 text-sm font-semibold text-slate-900">{{ button.label }}</h4>
+                                    <div class="flex items-center gap-1.5">
+                                      <ui-tag size="small" :color="button.mode === 'job' ? 'blue' : 'gray'">
                                         {{ describeButtonMode(button) }}
                                       </ui-tag>
-                                      <span class="ui-command-meta-text">{{ describeButtonForm(button) }}</span>
+                                      <span class="text-xs text-slate-500">{{ describeButtonForm(button) }}</span>
                                     </div>
                                   </div>
-                                  <span class="ui-command-badge">{{ button.form.length ? "Form" : "Direct" }}</span>
+                                  <span class="flex-shrink-0 rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-xs font-mono font-semibold text-slate-500">{{ button.form.length ? "表单" : "直接执行" }}</span>
                                 </div>
 
                                 <ui-form
                                   v-if="button.form.length"
                                   layout="vertical"
-                                  class="ui-button-form command-form"
+                                  class="ui-button-form flex flex-col gap-3"
                                   :model="formValues[button.action] ?? {}"
                                   @vue:mounted="initForm(button)"
                                 >
-                                  <div class="command-field-grid">
+                                  <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                                     <ui-form-item
                                       v-for="field in button.form"
                                       :key="field.name"
-                                      class="command-form-item"
+                                      class="mb-0"
                                     >
                                       <template #label>
                                         <span>{{ field.name }}</span>
-                                        <ui-tag v-if="field.required" size="small" color="red" class="required-tag">必填</ui-tag>
-                                        <span v-if="field.description" class="field-desc-inline">— {{ field.description }}</span>
+                                        <ui-tag v-if="field.required" size="small" color="red" class="ml-1">必填</ui-tag>
+                                        <span v-if="field.description" class="ml-1 text-xs font-normal text-slate-400">— {{ field.description }}</span>
                                       </template>
 
                                       <ui-select
@@ -606,7 +603,7 @@ const selectedActionMeta = computed(() =>
 
                                   <ui-button
                                     type="primary"
-                                    class="command-submit"
+                                    class="self-start"
                                     :loading="execLoading[button.action]"
                                     @click="executeButton(button)"
                                   >
@@ -615,11 +612,11 @@ const selectedActionMeta = computed(() =>
                                   </ui-button>
                                 </ui-form>
 
-                                <div v-else class="command-direct">
-                                  <p class="command-direct-copy">这个动作无需额外输入字段，可以直接发起执行。</p>
+                                <div v-else class="flex flex-col gap-3">
+                                  <p class="text-xs text-slate-500">此操作无需额外输入字段，可直接执行。</p>
                                   <ui-button
                                     :type="button.variant === 'primary' ? 'primary' : 'outline'"
-                                    class="command-submit command-submit--inline"
+                                    class="self-start w-full"
                                     :loading="execLoading[button.action]"
                                     @click="initForm(button); executeButton(button)"
                                   >
@@ -630,25 +627,25 @@ const selectedActionMeta = computed(() =>
 
                                 <div
                                   v-if="execResults[button.action]"
-                                  class="exec-result"
-                                  :class="execResults[button.action]!.status === 'ok' ? 'result-ok' : 'result-err'"
+                                  class="flex flex-col gap-3 rounded-lg border p-4"
+                                  :class="execResults[button.action]!.status === 'ok' ? 'bg-emerald-50/60 border-emerald-200' : 'bg-red-50/60 border-red-200'"
                                 >
-                                  <div class="result-header">
+                                  <div class="flex items-center gap-2">
                                     <icon-check-circle
                                       v-if="execResults[button.action]!.status === 'ok'"
-                                      class="result-icon result-icon--ok"
+                                      class="h-4 w-4 flex-shrink-0 text-emerald-600"
                                     />
-                                    <icon-close-circle v-else class="result-icon result-icon--err" />
-                                    <span class="result-title">
+                                    <icon-close-circle v-else class="h-4 w-4 flex-shrink-0 text-red-600" />
+                                    <span class="text-sm font-semibold">
                                       {{ execResults[button.action]!.status === "ok"
                                         ? "执行成功"
                                         : `错误: ${execResults[button.action]!.error_code}` }}
                                     </span>
                                   </div>
-                                  <p v-if="execResults[button.action]!.error_message" class="result-error-msg">
+                                  <p v-if="execResults[button.action]!.error_message" class="m-0 text-sm text-red-700">
                                     {{ execResults[button.action]!.error_message }}
                                   </p>
-                                  <pre v-if="execResults[button.action]!.result" class="result-json">{{
+                                  <pre v-if="execResults[button.action]!.result" class="overflow-auto rounded-lg border border-slate-200 bg-slate-950 p-4 text-xs leading-6 text-slate-300 whitespace-pre-wrap break-all">{{
                                     JSON.stringify(execResults[button.action]!.result, null, 2)
                                   }}</pre>
                                 </div>
@@ -663,89 +660,88 @@ const selectedActionMeta = computed(() =>
               </template>
 
               <!-- ── Fallback: flat action list ─────────────────────────────── -->
-              <div v-else class="action-workbench actions-layout">
-                <aside class="action-rail">
-                  <div class="action-rail-head">
-                    <span class="panel-kicker">Action Directory</span>
-                    <h3 class="action-rail-title">动作目录</h3>
-                    <p class="action-rail-copy">选择一个原子动作，在右侧构造 JSON 参数并立即执行。</p>
+              <div v-else class="rounded-xl border p-4 md:p-5 border-slate-200 bg-slate-50 flex min-h-[400px]">
+                <aside class="flex flex-shrink-0 flex-col border-r border-slate-200 bg-slate-50">
+                  <div class="flex flex-col gap-1 border-b border-slate-200 p-4">
+                    <span class="text-xs font-semibold uppercase tracking-wider text-[var(--accent)]">Action Directory</span>
+                    <h3 class="m-0 text-sm font-bold text-slate-900">动作目录</h3>
+                    <p class="text-xs text-slate-500">选择一个操作，在右侧填写 JSON 参数并立即执行。</p>
                   </div>
 
-                  <div class="action-list-panel">
+                  <div class="flex flex-1 flex-col gap-1 overflow-y-auto p-2">
                     <button
                       v-for="act in plugin.manifest.actions"
                       :key="act.key"
                       type="button"
-                      class="action-item"
-                      :class="{ 'action-item--active': selectedAction === act.key }"
+                      class="flex cursor-pointer flex-col gap-1 rounded-xl border border-transparent p-3 text-left bg-white/[32%] [transition-property:background-color,_border-color,_box-shadow,_transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/20 hover:border-slate-200 hover:bg-white hover:-translate-y-px"
+                      :class="{ 'border-blue-500/[18%] bg-slate-50 shadow-sm': selectedAction === act.key }"
                       @click="selectAction(act.key)"
                     >
-                      <div class="action-item-top">
-                        <code class="key-badge">{{ act.key }}</code>
-                        <span class="action-item-badge">Action</span>
+                      <div class="flex items-center justify-between gap-2">
+                        <code class="inline-flex items-center rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-xs font-mono text-slate-600">{{ act.key }}</code>
+                        <span class="text-xs font-semibold text-slate-400">操作</span>
                       </div>
-                      <p class="action-item-name">{{ act.name }}</p>
-                      <p v-if="act.description" class="action-item-desc">{{ act.description }}</p>
+                      <p class="m-0 text-sm font-medium text-slate-900">{{ act.name }}</p>
+                      <p v-if="act.description" class="m-0 text-xs text-slate-500">{{ act.description }}</p>
                     </button>
-                    <ui-empty v-if="!plugin.manifest.actions.length" description="该插件模型未注册任何动作" />
+                    <ui-empty v-if="!plugin.manifest.actions.length" description="该插件未注册任何操作" />
                   </div>
                 </aside>
 
-                <div class="action-exec-panel">
-                  <div v-if="!selectedAction" class="exec-placeholder action-stage-empty">
-                    <icon-thunderbolt class="placeholder-icon" />
-                    <p>请在左侧选择要执行的原子动作</p>
+                <div class="flex-1 overflow-y-auto p-5">
+                  <div v-if="!selectedAction" class="flex h-full flex-col items-center justify-center py-16 text-center text-sm text-slate-500 gap-3">
+                    <icon-thunderbolt class="mb-2 h-10 w-10 text-slate-400" />
+                    <p>请在左侧选择要执行的操作</p>
                   </div>
                   <template v-else>
-                    <ui-card class="premium-card action-stage-card">
+                    <ui-card class="min-w-0 flex-1 rounded-xl border overflow-hidden border-slate-200 bg-white shadow">
                       <template #title>
-                        <div class="card-header-with-icon">
-                          <div class="card-icon-box purple"><icon-code-block /></div>
+                        <div class="flex items-center gap-2">
+                          <div class="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-purple-50 text-purple-600"><icon-code-block /></div>
                           {{ selectedActionMeta?.name || "运行时调用" }}
                         </div>
                       </template>
-                      <div class="action-stage-card-body">
-                        <section class="action-stage-summary">
-                          <div class="action-stage-summary-copy">
-                            <code class="ui-command-code">{{ selectedAction }}</code>
-                            <p class="action-stage-summary-text">
-                              {{ selectedActionMeta?.description || "为这个原子动作填写 JSON 参数，然后在当前页面直接发起执行。" }}
+                      <div class="flex flex-col gap-5">
+                        <section class="flex items-start justify-between gap-3">
+                          <div class="flex flex-1 flex-col gap-1.5">
+                            <code class="text-xs font-mono text-[var(--accent)]">{{ selectedAction }}</code>
+                            <p class="text-sm text-slate-500">
+                              {{ selectedActionMeta?.description || "为该操作填写 JSON 参数，然后在当前页面直接执行。" }}
                             </p>
                           </div>
-                          <span class="action-stage-badge">JSON</span>
+                          <span class="flex-shrink-0 rounded border border-slate-200 bg-slate-100 px-2 py-0.5 text-xs font-mono font-semibold text-slate-600">JSON</span>
                         </section>
 
                         <ui-form layout="vertical" :model="{}">
-                          <ui-form-item label="动态挂载参数 (JSON 结构)">
+                          <ui-form-item label="执行参数 (JSON)">
                             <ui-textarea
                               v-model="paramsJSON"
                               :auto-size="{ minRows: 6, maxRows: 14 }"
-                              class="mono-field premium-textarea"
+                              class="font-mono text-sm"
                               placeholder="{}"
                             />
-                            <p v-if="paramsError" class="field-error">{{ paramsError }}</p>
+                            <p v-if="paramsError" class="mt-1 text-xs text-red-600">{{ paramsError }}</p>
                           </ui-form-item>
                           <ui-button
                             type="primary"
-                            class="execute-btn"
                             :loading="executeAccount.loading.value"
                             @click="handleExecute"
                           >
                             <template #icon><icon-play-arrow /></template>
-                            发送执行指令
+                            执行操作
                           </ui-button>
                         </ui-form>
 
-                        <div v-if="execResult" class="exec-result mt-5" :class="execResult.status === 'ok' ? 'result-ok' : 'result-err'">
-                          <div class="result-header">
-                            <icon-check-circle v-if="execResult.status === 'ok'" class="result-icon result-icon--ok" />
-                            <icon-close-circle v-else class="result-icon result-icon--err" />
-                            <span class="result-title">
+                        <div v-if="execResult" class="flex flex-col gap-3 rounded-lg border p-4 mt-5" :class="execResult.status === 'ok' ? 'bg-emerald-50/60 border-emerald-200' : 'bg-red-50/60 border-red-200'">
+                          <div class="flex items-center gap-2">
+                            <icon-check-circle v-if="execResult.status === 'ok'" class="h-4 w-4 flex-shrink-0 text-emerald-600" />
+                            <icon-close-circle v-else class="h-4 w-4 flex-shrink-0 text-red-600" />
+                            <span class="text-sm font-semibold">
                               {{ execResult.status === "ok" ? "指令下发并执行成功" : `执行异常: ${execResult.error_code}` }}
                             </span>
                           </div>
-                          <p v-if="execResult.error_message" class="result-error-msg">{{ execResult.error_message }}</p>
-                          <pre v-if="execResult.result" class="result-json premium-json">{{ JSON.stringify(execResult.result, null, 2) }}</pre>
+                          <p v-if="execResult.error_message" class="m-0 text-sm text-red-700">{{ execResult.error_message }}</p>
+                          <pre v-if="execResult.result" class="overflow-auto rounded-lg border border-slate-200 bg-slate-950 p-4 text-xs leading-6 text-slate-300 whitespace-pre-wrap break-all">{{ JSON.stringify(execResult.result, null, 2) }}</pre>
                         </div>
                       </div>
                     </ui-card>
@@ -760,4 +756,3 @@ const selectedActionMeta = computed(() =>
     </div>
   </div>
 </template>
-

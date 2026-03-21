@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { useRouter } from "vue-router";
-import { Message } from "@/lib/feedback";
 import { useTriggers, useDeleteTrigger, useFireTrigger } from "@/composables/useTriggers";
+import { useMessage } from "@/composables";
 import { PageHeader } from "@/components/index";
 import DataTable from "@/components/DataTable.vue";
 import { to } from "@/router/registry";
 
 const router = useRouter();
+const message = useMessage();
 const { data: items, loading, refresh } = useTriggers();
 const deleteTrigger = useDeleteTrigger();
 const fireTrigger = useFireTrigger();
@@ -27,25 +28,25 @@ async function handleFire(id: number) {
   try {
     const result = await fireTrigger.execute(id, safePayload());
     resultText.value = JSON.stringify(result, null, 2);
-    Message.success("触发成功");
+    message.success("触发成功");
   } catch (e) {
-    Message.error(e instanceof Error ? e.message : "触发失败");
+    message.error(e instanceof Error ? e.message : "触发失败");
   }
 }
 
 async function handleDelete(id: number) {
   try {
     await deleteTrigger.execute(id);
-    Message.success("已删除");
+    message.success("已删除");
     await refresh();
   } catch (e) {
-    Message.error(e instanceof Error ? e.message : "删除失败");
+    message.error(e instanceof Error ? e.message : "删除失败");
   }
 }
 </script>
 
 <template>
-  <div class="page-container list-page triggers-list-page">
+  <div class="page-shell">
     <PageHeader
       title="触发器"
       subtitle="通过 HTTP 调用触发任务执行，支持 Webhook 接入。"
@@ -54,14 +55,14 @@ async function handleDelete(id: number) {
     >
       <template #icon><icon-thunderbolt /></template>
       <template #actions>
-        <ui-button type="primary" class="create-btn" @click="router.push(to.triggers.create())">
+        <ui-button type="primary" @click="router.push(to.triggers.create())">
           <template #icon><icon-plus /></template>
           新建触发器
         </ui-button>
       </template>
     </PageHeader>
 
-    <ui-card class="data-grid-card triggers-table-card">
+    <ui-card class="mb-4">
       <DataTable
         :data="items"
         :loading="loading"
@@ -75,14 +76,14 @@ async function handleDelete(id: number) {
         <template #columns>
           <ui-table-column title="名称 / Key">
             <template #cell="{ record }">
-              <div class="identifier-text">{{ record.name }}</div>
-              <code class="key-badge trigger-key-badge">{{ record.key }}</code>
+              <div class="truncate text-[14px] font-medium text-slate-900">{{ record.name }}</div>
+              <code class="inline-flex items-center rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-xs font-mono text-slate-600 mt-1">{{ record.key }}</code>
             </template>
           </ui-table-column>
 
           <ui-table-column title="执行模式">
             <template #cell="{ record }">
-              <span class="mode-tag" :class="record.mode === 'sync' ? 'sync' : 'async'">
+              <span class="inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold shadow-sm [&.sync]:border-sky-200 [&.sync]:bg-sky-50 [&.sync]:text-sky-700 [&.async]:border-[var(--accent)]/20 [&.async]:bg-[var(--accent)]/8 [&.async]:text-[var(--accent)]" :class="record.mode === 'sync' ? 'sync' : 'async'">
                 {{ record.mode }}
               </span>
             </template>
@@ -90,17 +91,17 @@ async function handleDelete(id: number) {
 
           <ui-table-column title="Token 前缀">
             <template #cell="{ record }">
-              <span class="text-muted mono token-prefix">{{ record.token_prefix }}••••••</span>
+              <span class="font-mono text-sm text-slate-400">{{ record.token_prefix }}••••••</span>
             </template>
           </ui-table-column>
 
-          <ui-table-column title="操作" :width="160" align="right">
+          <ui-table-column title="操作" align="right">
             <template #cell="{ record }">
-              <div class="action-cell">
+              <div class="flex items-center justify-end gap-1">
                 <ui-button
                   size="mini"
                   type="text"
-                  class="action-btn-text fire-btn"
+                  class="text-amber-700"
                   :loading="fireTrigger.loading.value"
                   @click="handleFire(record.id)"
                 >
@@ -110,11 +111,11 @@ async function handleDelete(id: number) {
                 <ui-button
                   size="mini"
                   type="text"
-                  class="action-btn-text"
+                  class="text-slate-600"
                   @click="router.push(to.triggers.edit(record.id))"
                 >编辑</ui-button>
                 <ui-popconfirm content="确定要删除此触发器吗？" position="left" type="warning" @ok="handleDelete(record.id)">
-                  <ui-button size="mini" type="text" class="action-btn-text action-btn--danger" :loading="deleteTrigger.loading.value">
+                  <ui-button size="mini" type="text" class="text-red-600" :loading="deleteTrigger.loading.value">
                     删除
                   </ui-button>
                 </ui-popconfirm>
@@ -126,10 +127,10 @@ async function handleDelete(id: number) {
     </ui-card>
 
     <!-- Test panel (only shown when there are triggers) -->
-    <ui-card v-if="items.length" class="premium-card config-card">
+    <ui-card v-if="items.length" class="min-w-0 flex-1 rounded-xl border overflow-hidden border-slate-200 bg-white shadow">
       <template #title>
-        <div class="card-title-row">
-          <div class="title-icon icon-amber"><icon-thunderbolt /></div>
+        <div class="flex items-center gap-2">
+          <icon-thunderbolt class="h-4 w-4 text-amber-600" />
           测试发送
         </div>
       </template>
@@ -139,12 +140,12 @@ async function handleDelete(id: number) {
             v-model="payloadText"
             placeholder="{}"
             :auto-size="{ minRows: 3 }"
-            class="mono-field"
+            class="font-mono text-sm"
           />
-          <div class="field-hint">点击列表中的「测试」按钮时，此参数会一起发送。</div>
+          <div class="text-sm leading-6 text-slate-500">点击列表中的「测试」按钮时，此参数会一起发送。</div>
         </ui-form-item>
         <ui-form-item v-if="resultText" label="返回结果">
-          <ui-textarea :model-value="resultText" :auto-size="{ minRows: 4 }" readonly class="mono-field" />
+          <ui-textarea :model-value="resultText" :auto-size="{ minRows: 4 }" readonly class="font-mono text-sm" />
         </ui-form-item>
       </ui-form>
     </ui-card>

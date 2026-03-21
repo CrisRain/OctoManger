@@ -4,17 +4,17 @@ import {
   IconEmail, IconImport, IconEye, IconEdit, IconDelete, IconPlus
 } from "@/lib/icons";
 
-import { PageHeader, SmartListBar, RowActionsMenu } from "@/components/index";
+import { PageHeader, SmartListBar, RowActionsMenu, StatusTag } from "@/components/index";
 import { useEmailAccountsList } from "@/composables/useEmailAccountsList";
 import { to } from "@/router/registry";
 
 const router = useRouter();
 
 const columns = [
-  { title: "邮箱地址", dataIndex: "address", width: 300, slotName: "address" },
+  { title: "邮箱地址", dataIndex: "address", slotName: "address" },
   { title: "服务商", dataIndex: "provider", slotName: "provider" },
   { title: "状态", dataIndex: "status", slotName: "status" },
-  { title: "操作", width: 80, align: "right", slotName: "actions" },
+  { title: "操作", align: "right", slotName: "actions" },
 ];
 
 const {
@@ -38,10 +38,10 @@ const {
 </script>
 
 <template>
-  <div class="page-container email-accounts-list-page">
+  <div class="page-shell email-accounts-list-page">
     <PageHeader
-      title="邮箱账号"
-      subtitle="管理所有已接入的邮箱账号"
+      title="邮箱账号列表"
+      subtitle="管理已接入的邮箱账号"
       icon-bg="linear-gradient(135deg, rgba(234,88,12,0.12), rgba(249,115,22,0.12))"
       icon-color="var(--icon-orange)"
     >
@@ -53,7 +53,7 @@ const {
         </ui-button>
         <ui-button type="primary" @click="router.push(to.emailAccounts.create())">
           <template #icon><icon-plus /></template>
-          添加邮箱
+          创建邮箱账号
         </ui-button>
       </template>
     </PageHeader>
@@ -69,33 +69,33 @@ const {
     >
       <template #filters>
         <!-- 状态筛选 -->
-        <div class="filter-group">
-          <span class="filter-label">状态：</span>
-          <div class="filter-options">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="text-xs font-medium text-slate-500">状态：</span>
+          <div class="flex flex-wrap items-center gap-1">
             <button type="button"
-              class="filter-option"
-              :class="{ 'filter-option--active': !statusFilter }"
+              class="filter-chip"
+              :class="{ active: !statusFilter }"
               @click="statusFilter = ''"
             >
               全部
             </button>
             <button type="button"
-              class="filter-option"
-              :class="{ 'filter-option--active': statusFilter === 'active' }"
+              class="filter-chip"
+              :class="{ active: statusFilter === 'active' }"
               @click="statusFilter = 'active'"
             >
               已激活
             </button>
             <button type="button"
-              class="filter-option"
-              :class="{ 'filter-option--active': statusFilter === 'pending' }"
+              class="filter-chip"
+              :class="{ active: statusFilter === 'pending' }"
               @click="statusFilter = 'pending'"
             >
               待验证
             </button>
             <button type="button"
-              class="filter-option"
-              :class="{ 'filter-option--active': statusFilter === 'inactive' }"
+              class="filter-chip"
+              :class="{ active: statusFilter === 'inactive' }"
               @click="statusFilter = 'inactive'"
             >
               已停用
@@ -104,12 +104,12 @@ const {
         </div>
 
         <!-- 服务商筛选 -->
-        <div class="filter-group" v-if="providers.length">
-          <span class="filter-label">服务商：</span>
-          <div class="filter-options">
+        <div class="flex flex-wrap items-center gap-2" v-if="providers.length">
+          <span class="text-xs font-medium text-slate-500">服务商：</span>
+          <div class="flex flex-wrap items-center gap-1">
             <button type="button"
-              class="filter-option"
-              :class="{ 'filter-option--active': !providerFilter }"
+              class="filter-chip"
+              :class="{ active: !providerFilter }"
               @click="providerFilter = ''"
             >
               全部
@@ -117,8 +117,8 @@ const {
             <button type="button"
               v-for="provider in providers"
               :key="provider"
-              class="filter-option"
-              :class="{ 'filter-option--active': providerFilter === provider }"
+              class="filter-chip"
+              :class="{ active: providerFilter === provider }"
               @click="providerFilter = provider"
             >
               {{ provider }}
@@ -129,9 +129,8 @@ const {
     </SmartListBar>
 
     <!-- 数据表格 -->
-    <ui-card class="data-grid-card table-desktop-only">
+    <ui-card class="mb-4 hidden lg:block">
       <ui-table
-        class="premium-table"
         :data="filteredAccounts"
         :loading="loading"
         :columns="columns"
@@ -146,31 +145,22 @@ const {
       >
         <!-- 邮箱地址 -->
         <template #address="{ record }">
-          <div class="identifier-cell">
-            <div class="icon-box icon-orange">
+          <div class="flex items-center gap-3">
+            <div class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border border-orange-200 bg-orange-50 text-sm text-orange-600 shadow-sm">
               <icon-email />
             </div>
-            <span class="identifier-text">{{ record.address }}</span>
+            <span class="truncate text-[14px] font-medium text-slate-900">{{ record.address }}</span>
           </div>
         </template>
 
         <!-- 服务商 -->
         <template #provider="{ record }">
-          <code class="action-tag">{{ record.provider }}</code>
+          <code class="inline-flex items-center rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-xs font-mono text-slate-600">{{ record.provider }}</code>
         </template>
 
         <!-- 状态 -->
         <template #status="{ record }">
-          <span
-            class="status-badge"
-            :class="{
-              'status-badge--active': record.status === 'active',
-              'status-badge--pending': record.status === 'pending',
-              'status-badge--inactive': record.status === 'inactive',
-            }"
-          >
-            {{ record.status === 'active' ? '已激活' : record.status === 'pending' ? '待验证' : '已停用' }}
-          </span>
+          <StatusTag :status="record.status" />
         </template>
 
         <!-- 快速操作 -->
@@ -191,27 +181,27 @@ const {
         <template #empty>
           <ui-empty description="暂无邮箱账号">
             <ui-button type="primary" @click="router.push(to.emailAccounts.create())">
-              添加第一个邮箱
+              创建第一个邮箱账号
             </ui-button>
           </ui-empty>
         </template>
       </ui-table>
     </ui-card>
 
-    <div class="mobile-list">
+    <div class="flex flex-col gap-3 lg:hidden">
       <ui-card
         v-for="record in filteredAccounts"
         :key="record.id"
-        class="mobile-list-card"
+        class="rounded-xl border p-5 border-slate-200 bg-white shadow-sm"
       >
-        <div class="mobile-list-header">
-          <div class="icon-box icon-orange">
+        <div class="mb-3 flex items-center gap-3">
+          <div class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border border-orange-200 bg-orange-50 text-sm text-orange-600 shadow-sm">
             <icon-email />
           </div>
-          <div class="mobile-list-title-group">
-            <div class="mobile-list-title">{{ record.address }}</div>
-            <div class="mobile-list-subtitle">
-              <code class="action-tag">{{ record.provider }}</code>
+          <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+            <div class="truncate text-sm font-semibold text-slate-900">{{ record.address }}</div>
+            <div class="text-xs text-slate-500">
+              <code class="inline-flex items-center rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-xs font-mono text-slate-600">{{ record.provider }}</code>
             </div>
           </div>
           <RowActionsMenu
@@ -226,20 +216,11 @@ const {
           />
         </div>
 
-        <div class="mobile-list-meta">
-          <div class="mobile-list-meta-row">
-            <span class="mobile-list-label">状态</span>
-            <div class="mobile-list-value">
-              <span
-                class="status-badge"
-                :class="{
-                  'status-badge--active': record.status === 'active',
-                  'status-badge--pending': record.status === 'pending',
-                  'status-badge--inactive': record.status === 'inactive',
-                }"
-              >
-                {{ record.status === 'active' ? '已激活' : record.status === 'pending' ? '待验证' : '已停用' }}
-              </span>
+        <div class="flex flex-col gap-2">
+          <div class="flex items-center justify-between gap-2">
+            <span class="w-12 flex-shrink-0 text-xs font-medium text-slate-500">状态</span>
+            <div class="flex flex-wrap items-center gap-1">
+              <StatusTag :status="record.status" />
             </div>
           </div>
         </div>
@@ -247,7 +228,7 @@ const {
 
       <ui-card
         v-if="!loading && !filteredAccounts.length"
-        class="mobile-list-card mobile-list-empty-card"
+        class="rounded-xl border border-slate-200 bg-white shadow-sm px-5 py-8"
       >
         <ui-empty description="暂无邮箱账号">
           <ui-button type="primary" @click="router.push(to.emailAccounts.create())">
@@ -261,37 +242,46 @@ const {
     <ui-modal
       v-model:visible="showBulkImport"
       title="批量导入邮箱"
-      :width="640"
       :footer="bulkResult === null"
       ok-text="开始导入"
       :ok-loading="bulkImportLoading"
       @ok="handleBulkImport"
     >
       <div v-if="bulkResult === null">
-        <p class="bulk-hint">
-          每行一条，格式：<code>邮箱----密码----clientid----refresh_token</code>
+        <p class="mb-3 text-sm text-slate-500">
+          每行一条，格式：<code class="rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-xs font-mono text-slate-700">邮箱----密码----clientid----refresh_token</code>
         </p>
         <ui-textarea
           v-model="bulkText"
           :auto-size="{ minRows: 8, maxRows: 16 }"
           placeholder="user@example.com----password----xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx----0.AXXXXX..."
-          class="mono-textarea"
+          class="font-mono"
         />
       </div>
       <div v-else>
-        <div class="bulk-summary">
-          <span>共 {{ bulkResult.length }} 条</span>
-          <span class="success-count">成功 {{ bulkResult.filter(r => r.ok).length }}</span>
-          <span class="error-count">失败 {{ bulkResult.filter(r => !r.ok).length }}</span>
+        <div class="mb-4 flex items-center gap-3 text-sm">
+          <span class="text-slate-600">共 {{ bulkResult.length }} 条</span>
+          <span class="font-medium text-emerald-600">成功 {{ bulkResult.filter(r => r.ok).length }}</span>
+          <span class="font-medium text-red-600">失败 {{ bulkResult.filter(r => !r.ok).length }}</span>
         </div>
-        <div class="bulk-result-list">
-          <div v-for="(item, i) in bulkResult" :key="i" class="bulk-result-item" :class="item.ok ? 'result-ok' : 'result-fail'">
-            <span class="result-dot" :class="item.ok ? 'online' : 'offline'" />
-            <span class="result-address">{{ item.address || item.line }}</span>
-            <span v-if="!item.ok" class="result-error">{{ item.error }}</span>
+        <div class="flex max-h-64 flex-col gap-1.5 overflow-y-auto rounded-xl border border-slate-200 p-3">
+          <div
+            v-for="(item, i) in bulkResult"
+            :key="i"
+            class="flex items-start gap-2 rounded-lg border px-3 py-2 text-sm"
+            :class="item.ok ? 'border-emerald-200 bg-emerald-50/60' : 'border-red-200 bg-red-50/60'"
+          >
+            <span
+              class="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full"
+              :class="item.ok ? 'bg-emerald-500' : 'bg-red-500'"
+            />
+            <div class="flex flex-col gap-0.5">
+              <span class="font-mono text-xs text-slate-700">{{ item.address || item.line }}</span>
+              <span v-if="!item.ok" class="text-xs text-red-600">{{ item.error }}</span>
+            </div>
           </div>
         </div>
-        <div class="bulk-footer-actions">
+        <div class="mt-4 flex justify-end gap-2">
           <ui-button @click="() => { bulkResult = null; bulkText = ''; }">继续导入</ui-button>
           <ui-button type="primary" @click="showBulkImport = false">关闭</ui-button>
         </div>

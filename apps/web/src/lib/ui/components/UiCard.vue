@@ -19,8 +19,8 @@ const hasHeader = computed(() => Boolean(props.title || slots.title || slots.ext
 
 const sectionClass = computed(() =>
   cx(
-    "ui-card glass rounded-card border bg-surface-card shadow-card transition-all duration-300 hover:shadow-card-hover overflow-hidden",
-    !props.bordered && "border-transparent shadow-none hover:shadow-none",
+    "ui-card overflow-hidden rounded-xl border border-slate-200 bg-white/92 shadow-sm backdrop-blur-[8px] transition-all duration-200",
+    !props.bordered && "border-transparent shadow-none",
     attrs.class as string,
   ),
 );
@@ -30,14 +30,14 @@ const sectionClass = computed(() =>
   <section v-bind="{ ...attrs, class: undefined }" :class="sectionClass">
     <header
       v-if="hasHeader"
-      class="ui-card-header flex items-center justify-between gap-3 border-b border-surface-border bg-gradient-to-b from-slate-50/80 to-white/50 px-6 py-5"
+      class="ui-card-header flex items-center justify-between gap-3 border-b border-slate-200 bg-white/86 px-5 py-4"
     >
-      <div class="ui-card-header-title font-display text-[16px] font-bold tracking-[-0.02em] text-text-primary">
+      <div class="ui-card-header-title font-display text-[15px] font-semibold text-slate-900">
         <slot name="title">{{ title }}</slot>
       </div>
       <slot name="extra" />
     </header>
-    <div class="ui-card-body p-6">
+    <div class="ui-card-body p-5">
       <slot />
     </div>
   </section>

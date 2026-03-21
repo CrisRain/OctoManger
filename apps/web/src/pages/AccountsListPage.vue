@@ -3,11 +3,8 @@
  * 账号列表页 - UX优化版本
  * 集成SmartListBar、RowActionsMenu
  */
-import { computed, ref } from "vue";
-import { useRoute, useRouter } from "vue-router";
 import { IconUser, IconCheck, IconSync, IconStop, IconPlayArrow } from "@/lib/icons";
 
-import { PageHeader, SmartListBar, RowActionsMenu, StatusTag } from "@/components/index";
 import { useAccountTypes } from "@/composables/useAccountTypes";
 import { useAccounts } from "@/composables/useAccounts";
 import { useMessage, useConfirm, useErrorHandler } from "@/composables";
@@ -210,7 +207,7 @@ async function handleBatchToggle(enable: boolean) {
 </script>
 
 <template>
-  <div class="page-container accounts-list-page">
+  <div class="page-shell accounts-list-page">
     <PageHeader
       :title="currentType?.name || '账号管理'"
       :subtitle="((currentType?.schema as Record<string, unknown> | undefined)?.description as string | undefined) || '集中管理各类型账号，支持按类型筛选和批量操作'"
@@ -237,12 +234,12 @@ async function handleBatchToggle(enable: boolean) {
     >
       <template #filters>
         <!-- 类型筛选 -->
-        <div class="filter-group">
-          <span class="filter-label">类型：</span>
-          <div class="filter-options">
+        <div class="flex flex-wrap items-center gap-3">
+          <span class="text-sm font-medium text-slate-600">类型：</span>
+          <div class="flex flex-wrap items-center gap-1.5">
             <button type="button"
-              class="filter-option"
-              :class="{ 'filter-option--active': !typeKey }"
+              class="filter-chip"
+              :class="{ active: !typeKey }"
               @click="router.push(to.accounts.list())"
             >
               全部
@@ -250,8 +247,8 @@ async function handleBatchToggle(enable: boolean) {
             <button type="button"
               v-for="type in types?.filter(t => t.category === 'generic')"
               :key="type.key"
-              class="filter-option"
-              :class="{ 'filter-option--active': normalizedTypeKey === normalizeFilterValue(type.key) }"
+              class="filter-chip"
+              :class="{ active: normalizedTypeKey === normalizeFilterValue(type.key) }"
               @click="router.push(to.accounts.byType(type.key))"
             >
               {{ type.name }}
@@ -260,14 +257,14 @@ async function handleBatchToggle(enable: boolean) {
         </div>
 
         <!-- 状态筛选 -->
-        <div class="filter-group">
-          <span class="filter-label">状态：</span>
-          <div class="filter-options">
+        <div class="flex flex-wrap items-center gap-3 mt-3">
+          <span class="text-sm font-medium text-slate-600">状态：</span>
+          <div class="flex flex-wrap items-center gap-1.5">
             <button type="button"
               v-for="option in statusOptions"
               :key="option.value"
-              class="filter-option"
-              :class="{ 'filter-option--active': statusFilter === option.value }"
+              class="filter-chip"
+              :class="{ active: statusFilter === option.value }"
               @click="statusFilter = option.value"
             >
               {{ option.label }}
@@ -284,9 +281,8 @@ async function handleBatchToggle(enable: boolean) {
     </SmartListBar>
 
     <!-- 数据表格 -->
-    <ui-card class="data-grid-card table-desktop-only">
+    <ui-card class="mb-4 hidden lg:block">
       <ui-table
-        class="premium-table"
         :data="filteredAccounts"
         :loading="loadingAccounts || loadingTypes"
         :pagination="{
@@ -300,15 +296,15 @@ async function handleBatchToggle(enable: boolean) {
       >
         <template #columns>
           <!-- 账号标识 -->
-          <ui-table-column title="账号标识" data-index="identifier" :width="200">
+          <ui-table-column title="账号标识" data-index="identifier">
             <template #cell="{ record }">
-              <div class="identifier-cell">
-                <div class="icon-box icon-blue">
+              <div class="flex items-center gap-3">
+                <div class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border border-blue-200 bg-blue-50 text-sm text-blue-600 shadow-sm">
                   <icon-user />
                 </div>
-                <div class="grow-content">
-                  <div class="identifier-text">{{ record.identifier }}</div>
-                  <code v-if="record.id" class="sub-text mono">#{{ record.id }}</code>
+                <div class="flex min-w-0 flex-col gap-0.5">
+                  <div class="truncate text-[14px] font-medium text-slate-900">{{ record.identifier }}</div>
+                  <code v-if="record.id" class="text-xs text-slate-500 mono">#{{ record.id }}</code>
                 </div>
               </div>
             </template>
@@ -317,10 +313,10 @@ async function handleBatchToggle(enable: boolean) {
           <!-- 类型 -->
           <ui-table-column title="类型" data-index="account_type_key">
             <template #cell="{ record }">
-              <code v-if="resolveAccountTypeKey(record)" class="action-tag">
+              <code v-if="resolveAccountTypeKey(record)" class="inline-flex items-center rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-xs font-mono text-slate-600">
                 {{ resolveAccountTypeKey(record) }}
               </code>
-              <span v-else class="text-muted">—</span>
+              <span v-else class="text-sm text-slate-400">—</span>
             </template>
           </ui-table-column>
 
@@ -334,7 +330,7 @@ async function handleBatchToggle(enable: boolean) {
           <!-- 标签 -->
           <ui-table-column title="标签" data-index="tags">
             <template #cell="{ record }">
-              <div v-if="record.tags?.length" class="tags-cell">
+              <div v-if="record.tags?.length" class="flex flex-wrap items-center gap-1">
                 <ui-tag v-for="tag in record.tags.slice(0, 3)" :key="tag" size="small">
                   {{ tag }}
                 </ui-tag>
@@ -342,12 +338,12 @@ async function handleBatchToggle(enable: boolean) {
                   +{{ record.tags.length - 3 }}
                 </ui-tag>
               </div>
-              <span v-else class="text-muted">—</span>
+              <span v-else class="text-sm text-slate-400">—</span>
             </template>
           </ui-table-column>
 
           <!-- 快速操作 -->
-          <ui-table-column title="操作" :width="80" align="right">
+          <ui-table-column title="操作" align="right">
             <template #cell="{ record }">
               <RowActionsMenu
                 :item="record"
@@ -379,20 +375,20 @@ async function handleBatchToggle(enable: boolean) {
       </ui-table>
     </ui-card>
 
-    <div class="mobile-list">
+    <div class="flex flex-col gap-3 lg:hidden">
       <ui-card
         v-for="record in filteredAccounts"
         :key="record.id"
-        class="mobile-list-card"
+        class="rounded-xl border p-5 border-slate-200 bg-white shadow-sm"
       >
-        <div class="mobile-list-header">
-          <div class="icon-box icon-blue">
+        <div class="mb-3 flex items-center gap-3">
+          <div class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border border-blue-200 bg-blue-50 text-sm text-blue-600 shadow-sm">
             <icon-user />
           </div>
-          <div class="mobile-list-title-group">
-            <div class="mobile-list-title">{{ record.identifier }}</div>
-            <div class="mobile-list-subtitle">
-              <code v-if="record.id" class="sub-text mono">#{{ record.id }}</code>
+          <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+            <div class="truncate text-sm font-semibold text-slate-900">{{ record.identifier }}</div>
+            <div class="text-xs text-slate-500">
+              <code v-if="record.id" class="text-xs text-slate-500 mono">#{{ record.id }}</code>
             </div>
           </div>
           <RowActionsMenu
@@ -409,27 +405,27 @@ async function handleBatchToggle(enable: boolean) {
           />
         </div>
 
-        <div class="mobile-list-meta">
-          <div class="mobile-list-meta-row">
-            <span class="mobile-list-label">类型</span>
-            <div class="mobile-list-value">
-              <code v-if="resolveAccountTypeKey(record)" class="action-tag">
+        <div class="flex flex-col gap-2">
+          <div class="flex items-center justify-between gap-2">
+            <span class="w-12 flex-shrink-0 text-xs font-medium text-slate-500">类型</span>
+            <div class="flex flex-wrap items-center gap-1">
+              <code v-if="resolveAccountTypeKey(record)" class="inline-flex items-center rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-xs font-mono text-slate-600">
                 {{ resolveAccountTypeKey(record) }}
               </code>
-              <span v-else class="text-muted">—</span>
+              <span v-else class="text-sm text-slate-400">—</span>
             </div>
           </div>
 
-          <div class="mobile-list-meta-row">
-            <span class="mobile-list-label">状态</span>
-            <div class="mobile-list-value">
+          <div class="flex items-center justify-between gap-2">
+            <span class="w-12 flex-shrink-0 text-xs font-medium text-slate-500">状态</span>
+            <div class="flex flex-wrap items-center gap-1">
               <StatusTag :status="record.status" />
             </div>
           </div>
 
-          <div class="mobile-list-meta-row">
-            <span class="mobile-list-label">标签</span>
-            <div class="mobile-list-value">
+          <div class="flex items-center justify-between gap-2">
+            <span class="w-12 flex-shrink-0 text-xs font-medium text-slate-500">标签</span>
+            <div class="flex flex-wrap items-center gap-1">
               <template v-if="record.tags?.length">
                 <ui-tag v-for="tag in record.tags.slice(0, 3)" :key="tag" size="small">
                   {{ tag }}
@@ -438,7 +434,7 @@ async function handleBatchToggle(enable: boolean) {
                   +{{ record.tags.length - 3 }}
                 </ui-tag>
               </template>
-              <span v-else class="text-muted">—</span>
+              <span v-else class="text-sm text-slate-400">—</span>
             </div>
           </div>
         </div>
@@ -446,7 +442,7 @@ async function handleBatchToggle(enable: boolean) {
 
       <ui-card
         v-if="!loadingAccounts && !loadingTypes && !filteredAccounts.length"
-        class="mobile-list-card mobile-list-empty-card"
+        class="rounded-xl border border-slate-200 bg-white shadow-sm px-5 py-8"
       >
         <ui-empty
           :description="accountsError ? `加载失败: ${accountsError}` : (typeKey ? `暂无 [${typeKey}] 类型的账号` : '暂无账号')"

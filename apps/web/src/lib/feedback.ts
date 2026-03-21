@@ -79,7 +79,7 @@ function mountToast(args: {
 
   const toast = document.createElement("div");
   toast.className = [
-    "pointer-events-auto flex min-w-[240px] max-w-[420px] items-start gap-3 rounded-xl border px-4 py-3 shadow-lg backdrop-blur",
+    "pointer-events-auto flex min-w-[240px] max-w-[420px] items-start gap-3 rounded-xl border px-4 py-3 shadow-md backdrop-blur",
     TOAST_TONE_CLASS[args.type],
     "animate-[fade-in_.2s_ease]",
   ].join(" ");

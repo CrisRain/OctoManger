@@ -126,24 +126,24 @@ function handleCancel() {
 </script>
 
 <template>
-  <div class="page-container email-account-create-page">
+  <div class="page-shell email-account-create-page">
     <PageHeader
-      title="添加邮箱账号"
-      subtitle="添加一个新的邮箱账号实例"
+      title="创建邮箱账号"
+      subtitle="创建一个新的邮箱账号"
       icon-bg="linear-gradient(135deg, rgba(234,88,12,0.12), rgba(249,115,22,0.12))"
       icon-color="var(--icon-orange)"
       :back-to="to.emailAccounts.list()"
-      back-label="返回邮箱账号"
+      back-label="返回邮箱账号列表"
     >
       <template #icon><icon-email /></template>
     </PageHeader>
 
-    <div class="form-layout">
+    <div class="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,_1.45fr)_minmax(16em,_0.85fr)]">
       <!-- 表单卡片 -->
-      <ui-card class="form-card">
+      <ui-card class="min-w-0">
         <template #title>
-          <div class="card-title-row">
-            <icon-email class="card-title-icon" />
+          <div class="flex items-center gap-2">
+            <icon-email class="h-5 w-5 text-[var(--accent)]" />
             <span>基本信息</span>
           </div>
         </template>
@@ -156,42 +156,42 @@ function handleCancel() {
       </ui-card>
 
       <!-- 说明卡片 -->
-      <ui-card class="info-card">
+      <ui-card class="min-w-0 lg:sticky lg:top-[var(--space-6)]">
         <template #title>
-          <div class="card-title-row">
-            <icon-info-circle class="card-title-icon" />
+          <div class="flex items-center gap-2">
+            <icon-info-circle class="h-5 w-5 text-[var(--accent)]" />
             <span>配置说明</span>
           </div>
         </template>
 
-        <div class="info-content">
-          <h4 class="info-title">支持的邮箱服务商</h4>
-          <div class="provider-list">
-            <div class="provider-item">
-              <div class="provider-icon">O</div>
-              <div class="provider-info">
-                <div class="provider-name">Outlook</div>
-                <div class="provider-desc">Microsoft Outlook / Office 365</div>
+        <div class="flex flex-col gap-4">
+          <h4 class="text-sm font-semibold text-slate-900">支持的邮箱服务商</h4>
+          <div class="flex flex-col gap-3">
+            <div class="flex items-start gap-3 rounded-xl border p-4 border-slate-200 bg-slate-50 shadow-sm flex-col">
+              <div class="flex h-10 w-10 items-center justify-center rounded-xl border text-sm font-bold text-slate-700 border-slate-200 bg-slate-50 shadow-sm">O</div>
+              <div>
+                <div class="text-sm font-semibold text-slate-900">Outlook</div>
+                <div class="text-xs leading-5 text-slate-500">Microsoft Outlook / Office 365</div>
               </div>
             </div>
-            <div class="provider-item">
-              <div class="provider-icon">G</div>
-              <div class="provider-info">
-                <div class="provider-name">Gmail</div>
-                <div class="provider-desc">Google Gmail (即将支持)</div>
+            <div class="flex items-start gap-3 rounded-xl border p-4 border-slate-200 bg-slate-50 shadow-sm flex-col">
+              <div class="flex h-10 w-10 items-center justify-center rounded-xl border text-sm font-bold text-slate-700 border-slate-200 bg-slate-50 shadow-sm">G</div>
+              <div>
+                <div class="text-sm font-semibold text-slate-900">Gmail</div>
+                <div class="text-xs leading-5 text-slate-500">Google Gmail (即将支持)</div>
               </div>
             </div>
-            <div class="provider-item">
-              <div class="provider-icon">I</div>
-              <div class="provider-info">
-                <div class="provider-name">IMAP</div>
-                <div class="provider-desc">通用 IMAP 协议 (即将支持)</div>
+            <div class="flex items-start gap-3 rounded-xl border p-4 border-slate-200 bg-slate-50 shadow-sm flex-col">
+              <div class="flex h-10 w-10 items-center justify-center rounded-xl border text-sm font-bold text-slate-700 border-slate-200 bg-slate-50 shadow-sm">I</div>
+              <div>
+                <div class="text-sm font-semibold text-slate-900">IMAP</div>
+                <div class="text-xs leading-5 text-slate-500">通用 IMAP 协议 (即将支持)</div>
               </div>
             </div>
           </div>
 
-          <h4 class="info-title">配置步骤</h4>
-          <ol class="config-steps">
+          <h4 class="text-sm font-semibold text-slate-900">配置步骤</h4>
+          <ol class="pl-5 text-sm leading-7 text-slate-600">
             <li>填写邮箱地址和选择服务商</li>
             <li>设置初始状态（通常为"待验证"）</li>
             <li>配置 OAuth 回调地址</li>
@@ -199,8 +199,8 @@ function handleCancel() {
             <li>授权完成后状态自动更新为"已激活"</li>
           </ol>
 
-          <h4 class="info-title">注意事项</h4>
-          <ul class="notes-list">
+          <h4 class="text-sm font-semibold text-slate-900">注意事项</h4>
+          <ul class="pl-5 text-sm leading-7 text-slate-600">
             <li>回调地址必须与在邮箱服务商处注册的地址一致</li>
             <li>租户ID (Tenant) 通常使用 "common" 即可</li>
             <li>默认邮箱文件夹为 "Inbox"</li>
@@ -211,7 +211,7 @@ function handleCancel() {
     </div>
 
     <!-- 底部操作栏 -->
-    <div class="form-footer">
+    <div class="flex items-center justify-end gap-3 rounded-xl border px-5 py-4 sticky bottom-[var(--space-4)] z-10 border-slate-200 bg-slate-50 shadow-sm backdrop-blur-xl backdrop-saturate-150 max-md:flex-col max-md:items-stretch max-md:bottom-[var(--space-3)]">
       <ui-button size="large" @click="handleCancel">
         取消
       </ui-button>

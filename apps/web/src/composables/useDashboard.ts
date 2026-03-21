@@ -1,7 +1,7 @@
-import { onMounted, onUnmounted } from "vue";
 import { storeToRefs } from "pinia";
 import { useSystemStore } from "@/store";
 import type { DashboardSummary } from "@/types";
+import { useAutoRefresh } from "./useAutoRefresh";
 
 export type { DashboardSummary };
 
@@ -13,14 +13,11 @@ export function useSystemStatus() {
     await store.fetchSystemStatus();
   }
 
-  let timer: ReturnType<typeof setInterval> | null = null;
-  onMounted(() => {
-    void refresh();
-    timer = setInterval(() => void refresh(), 10000);
+  const autoRefresh = useAutoRefresh(refresh, {
+    intervalMs: 15000,
   });
-  onUnmounted(() => { if (timer) clearInterval(timer); });
 
-  return { data: systemStatus, loading: loadingStatus, error, refresh };
+  return { data: systemStatus, loading: loadingStatus, error, refresh: autoRefresh.refresh };
 }
 
 export function useDashboardSnapshot() {
@@ -34,12 +31,9 @@ export function useDashboardSnapshot() {
     }
   }
 
-  let timer: ReturnType<typeof setInterval> | null = null;
-  onMounted(() => {
-    void refresh();
-    timer = setInterval(() => void refresh(), 10000);
+  const autoRefresh = useAutoRefresh(refresh, {
+    intervalMs: 15000,
   });
-  onUnmounted(() => { if (timer) clearInterval(timer); });
 
-  return { data: dashboardSummary, loading: loadingDashboard, error, refresh };
+  return { data: dashboardSummary, loading: loadingDashboard, error, refresh: autoRefresh.refresh };
 }

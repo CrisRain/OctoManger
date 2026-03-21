@@ -1,7 +1,7 @@
 import type { App } from "vue";
 import { toKebabCase } from "./utils";
 
-export { cx, toKebabCase, normalizeWidth, flattenNodes, optionValue, getFromPath } from "./utils";
+export { cx, toKebabCase, flattenNodes, optionValue, getFromPath } from "./utils";
 
 export { default as UiButton } from "./components/UiButton.vue";
 export { default as UiCard } from "./components/UiCard.vue";

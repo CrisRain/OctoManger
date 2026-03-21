@@ -110,7 +110,7 @@ async function handleBatchDelete(items: any[]) {
 </script>
 
 <template>
-  <div class="page-container smart-list-page account-types-list-page">
+  <div class="page-shell smart-list-page account-types-list-page">
     <PageHeader
       title="账号类型"
       subtitle="定义系统中使用的账号类型及其字段结构"
@@ -135,14 +135,14 @@ async function handleBatchDelete(items: any[]) {
       @batch-delete="handleBatchDelete"
     >
       <template #filters>
-        <div class="filter-group">
-          <span class="filter-label">分类：</span>
-          <div class="filter-options">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="text-xs font-medium text-slate-500">分类：</span>
+          <div class="flex flex-wrap items-center gap-1">
             <button type="button"
               v-for="option in categoryOptions"
               :key="option.value"
-              class="filter-option"
-              :class="{ 'filter-option--active': categoryFilter === option.value }"
+              class="filter-chip"
+              :class="{ active: categoryFilter === option.value }"
               @click="categoryFilter = option.value"
             >
               {{ option.label }}
@@ -153,50 +153,55 @@ async function handleBatchDelete(items: any[]) {
     </SmartListBar>
 
     <!-- 数据卡片网格 -->
-    <div class="types-grid">
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
       <ui-card
         v-for="item in filteredItems"
         :key="item.key"
-        class="type-card"
+        class="cursor-pointer"
         hoverable
         @click="openDetail(item)"
       >
-        <div class="type-header">
-          <div class="type-icon" :class="`type-icon--${item.category}`">
+        <div class="mb-3 flex items-center gap-3">
+          <div
+            class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl text-sm"
+            :class="{
+              'bg-blue-50 text-blue-500': item.category === 'generic',
+              'bg-orange-50 text-orange-500': item.category === 'email',
+              'bg-slate-50 text-slate-500': item.category === 'system'
+            }"
+          >
             <icon-layers />
           </div>
-          <div class="type-info">
-            <code class="type-key">{{ item.key }}</code>
-            <span class="type-count">
+          <div class="min-w-0 flex-1">
+            <code class="block truncate font-mono text-[11px] text-slate-400">{{ item.key }}</code>
+            <span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
               {{ item.category === 'generic' ? '通用' : item.category === 'email' ? '邮箱' : '系统' }}
             </span>
           </div>
         </div>
-        <div class="type-name">{{ item.name }}</div>
-        <div class="type-meta">
-          <span class="type-field-count">{{ Object.keys(item.schema || {}).length }} 个字段</span>
-        </div>
-
-        <!-- 快速操作 -->
-        <div class="type-actions" @click.stop>
-          <ui-button size="small" type="text" @click="handleQuickAction('edit', item)">
-            <template #icon><icon-edit /></template>
-            编辑
-          </ui-button>
-          <ui-button
-            size="small"
-            type="text"
-            status="danger"
-            @click="handleQuickAction('delete', item)"
-          >
-            <template #icon><icon-delete /></template>
-            删除
-          </ui-button>
+        <div class="mb-3 text-sm font-semibold text-slate-900">{{ item.name }}</div>
+        <div class="flex items-center justify-between gap-2 border-t border-slate-100 pt-3">
+          <span class="text-xs text-slate-500">{{ Object.keys(item.schema || {}).length }} 个字段</span>
+          <div class="flex items-center gap-1" @click.stop>
+            <ui-button size="small" type="text" @click="handleQuickAction('edit', item)">
+              <template #icon><icon-edit /></template>
+              编辑
+            </ui-button>
+            <ui-button
+              size="small"
+              type="text"
+              status="danger"
+              @click="handleQuickAction('delete', item)"
+            >
+              <template #icon><icon-delete /></template>
+              删除
+            </ui-button>
+          </div>
         </div>
       </ui-card>
 
       <!-- 空状态 -->
-      <ui-card v-if="!loading && !filteredItems.length" class="empty-card">
+      <ui-card v-if="!loading && !filteredItems.length" class="col-span-full empty-state-block">
         <ui-empty description="暂无账号类型">
           <ui-button type="primary" @click="router.push(to.accountTypes.create())">
             创建第一个账号类型
@@ -213,37 +218,37 @@ async function handleBatchDelete(items: any[]) {
       @close="closeDetail"
     >
       <template v-if="selectedItem" #detail>
-        <div class="detail-section">
-          <div class="detail-row">
-            <span class="detail-label">类型标识</span>
-            <code class="detail-value mono">{{ selectedItem.key }}</code>
+        <div class="rounded-xl border p-4 border-slate-200 bg-white/[56%]">
+          <div class="flex items-start justify-between gap-4 border-b border-slate-100 py-3 first:pt-0 last:border-b-0 last:pb-0 max-md:flex-col max-md:items-start">
+            <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">类型标识</span>
+            <code class="text-sm font-medium text-slate-900 mono">{{ selectedItem.key }}</code>
           </div>
-          <div class="detail-row">
-            <span class="detail-label">分类</span>
-            <span class="detail-value">
+          <div class="flex items-start justify-between gap-4 border-b border-slate-100 py-3 first:pt-0 last:border-b-0 last:pb-0 max-md:flex-col max-md:items-start">
+            <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">分类</span>
+            <span class="text-sm font-medium text-slate-900">
               {{ selectedItem.category === 'generic' ? '通用' : selectedItem.category === 'email' ? '邮箱' : '系统' }}
             </span>
           </div>
-          <div class="detail-row">
-            <span class="detail-label">字段数量</span>
-            <span class="detail-value">{{ Object.keys(selectedItem.schema || {}).length }} 个</span>
+          <div class="flex items-start justify-between gap-4 border-b border-slate-100 py-3 first:pt-0 last:border-b-0 last:pb-0 max-md:flex-col max-md:items-start">
+            <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">字段数量</span>
+            <span class="text-sm font-medium text-slate-900">{{ Object.keys(selectedItem.schema || {}).length }} 个</span>
           </div>
         </div>
 
-        <div v-if="selectedItem.description" class="detail-section">
-          <h4 class="section-title">描述</h4>
-          <p class="section-text">{{ selectedItem.description }}</p>
+        <div v-if="selectedItem.description" class="rounded-xl border p-4 border-slate-200 bg-white/[56%]">
+          <h4 class="text-[15px] font-semibold text-slate-900">描述</h4>
+          <p class="mt-2 text-sm leading-6 text-slate-600">{{ selectedItem.description }}</p>
         </div>
 
-        <div v-if="selectedItem.schema && Object.keys(selectedItem.schema).length" class="detail-section">
-          <h4 class="section-title">字段定义</h4>
-          <div class="schema-list">
-            <div v-for="(field, key) in selectedItem.schema" :key="key" class="schema-item">
-              <div class="schema-header">
-                <code class="schema-key">{{ key }}</code>
-                <span class="schema-type">{{ field.type || 'string' }}</span>
+        <div v-if="selectedItem.schema && Object.keys(selectedItem.schema).length" class="rounded-xl border p-4 border-slate-200 bg-white/[56%]">
+          <h4 class="text-[15px] font-semibold text-slate-900">字段定义</h4>
+          <div class="mt-3 flex flex-col gap-2">
+            <div v-for="(field, key) in selectedItem.schema" :key="key" class="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+              <div class="flex flex-wrap items-center gap-2">
+                <code class="text-xs font-mono font-semibold text-slate-700">{{ key }}</code>
+                <span class="inline-flex items-center rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] text-slate-500">{{ field.type || 'string' }}</span>
               </div>
-              <p v-if="field.description" class="schema-desc">{{ field.description }}</p>
+              <p v-if="field.description" class="mt-1.5 text-xs leading-relaxed text-slate-500">{{ field.description }}</p>
             </div>
           </div>
         </div>

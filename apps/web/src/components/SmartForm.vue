@@ -146,7 +146,7 @@ defineExpose({
 </script>
 
 <template>
-  <ui-form :model="formData" layout="vertical" class="smart-form">
+  <ui-form :model="formData" layout="vertical">
     <ui-form-item
       v-for="field in fields"
       :key="field.name"
@@ -154,10 +154,8 @@ defineExpose({
       :required="field.required"
       :validate-status="errors[field.name] ? 'error' : undefined"
       :help="errors[field.name]"
-      class="smart-form-item"
-      :class="{ 'smart-form-item--error': errors[field.name] }"
     >
-      <div class="field-body">
+      <div class="flex flex-col gap-1.5">
         <!-- 文本输入 -->
         <template v-if="field.type === 'text'">
           <ui-input
@@ -188,7 +186,7 @@ defineExpose({
             <template #suffix>
               <button
                 type="button"
-                class="password-toggle"
+                class="h-7 w-7 rounded text-slate-400 inline-flex items-center justify-center border-[0] bg-transparent cursor-pointer transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/20 hover:text-slate-600"
                 @click="togglePasswordVisibility(field.name)"
               >
                 <icon-eye v-if="!visiblePasswords[field.name]" />
@@ -215,7 +213,7 @@ defineExpose({
             :placeholder="field.placeholder"
             :min="field.min"
             :max="field.max"
-            class="full-width"
+            class="w-full"
             @focus="clearError(field.name)"
           />
         </template>
@@ -225,7 +223,7 @@ defineExpose({
           <ui-select
             v-model="formData[field.name]"
             :placeholder="field.placeholder"
-            class="full-width"
+            class="w-full"
             @focus="clearError(field.name)"
           >
             <ui-option
@@ -242,14 +240,15 @@ defineExpose({
         <template v-else-if="field.type === 'switch'">
           <ui-switch
             v-model="formData[field.name]"
+            class="self-start"
             @change="clearError(field.name)"
           />
         </template>
 
         <!-- 标签输入 -->
         <template v-else-if="field.type === 'tags'">
-          <div class="tags-input">
-            <div class="tags-list">
+          <div class="flex flex-col gap-2">
+            <div class="flex min-h-[38px] flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-white p-2">
               <ui-tag
                 v-for="(tag, index) in formData[field.name]"
                 :key="index"
@@ -262,7 +261,7 @@ defineExpose({
                 v-model="tagInput[field.name]"
                 :placeholder="field.placeholder || '输入后按回车添加'"
                 size="small"
-                class="tags-input-field"
+                class="min-w-[100px] flex-1"
                 @keyup.enter="(e: KeyboardEvent) => { addTag(field.name, (e.target as HTMLInputElement).value); tagInput[field.name] = ''; }"
               />
             </div>
@@ -270,7 +269,7 @@ defineExpose({
         </template>
 
         <!-- 描述 -->
-        <div v-if="field.description" class="field-description">{{ field.description }}</div>
+        <div v-if="field.description" class="text-xs text-slate-500">{{ field.description }}</div>
       </div>
     </ui-form-item>
 

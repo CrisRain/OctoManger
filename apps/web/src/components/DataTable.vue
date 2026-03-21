@@ -27,18 +27,18 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="data-table-wrapper">
+  <div class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
     <!-- Loading skeleton -->
-    <div v-if="loading" class="data-table-skeleton">
-      <div v-for="i in (skeletonRows ?? 6)" :key="i" class="skeleton-row">
+    <div v-if="loading" class="flex flex-col divide-y divide-slate-100 bg-white/30">
+      <div v-for="i in (skeletonRows ?? 6)" :key="i" class="px-4 py-3">
         <ui-skeleton :animation="true">
-          <ui-skeleton-line :rows="1" :line-height="18" :line-spacing="0" :widths="['100%']" />
+          <ui-skeleton-line :rows="1" line-height="1.125em" :line-spacing="0" :widths="['100%']" />
         </ui-skeleton>
       </div>
     </div>
 
     <!-- Empty state -->
-    <div v-else-if="!data.length" class="data-table-empty">
+    <div v-else-if="!data.length" class="bg-white/30 py-16">
       <slot name="empty">
         <EmptyState
           :type="empty?.type"
