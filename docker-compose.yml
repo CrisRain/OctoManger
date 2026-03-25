@@ -17,18 +17,15 @@ services:
       retries: 8
 
   redis:
-    image: redis:7
+    image: redis:7-alpine
     container_name: octomanger-redis
-    command: ["redis-server", "--appendonly", "yes"]
     ports:
       - "6379:6379"
-    volumes:
-      - redisdata:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
-      retries: 8
+      retries: 5
 
   app:
     build:
@@ -42,38 +39,39 @@ services:
         condition: service_healthy
     ports:
       - "8080:8080"
+    stop_grace_period: 30s
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python3",
+          "-c",
+          "import sys,urllib.request; sys.exit(0) if urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=2).status == 200 else sys.exit(1)",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 15s
     environment:
-      SERVER_PORT: "8080"
-      SERVER_WEB_DIST_DIR: "/app/web-dist"
-      LOGGING_FILE: "/app/logs/octomanger.log"
-      LOGGING_LEVEL: "info"
-      REDIS_ADDR: "redis:6379"
-      ASYNQ_CONCURRENCY: "10"
+      API_ADDR: ":8080"
+      WEB_DIST_DIR: "/app/web-dist"
+      LOG_LEVEL: "info"
       PYTHON_BIN: "python3"
-      PATHS_OCTO_MODULE_DIR: "/app/scripts/python/modules"
-      OCTOMODULE_SERVICE_URL: "${OCTOMODULE_SERVICE_URL:-http://127.0.0.1:8091}"
-      OCTOMODULE_SERVICE_EMBEDDED: "${OCTOMODULE_SERVICE_EMBEDDED:-true}"
-      OCTOMODULE_SERVICE_TOKEN: "${OCTOMODULE_SERVICE_TOKEN:-}"
-      PLAYWRIGHT_DOWNLOAD_HOST: "${PLAYWRIGHT_DOWNLOAD_HOST:-}"
-      PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT: "${PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT:-120000}"
-      PLAYWRIGHT_BROWSERS_PATH: "${PLAYWRIGHT_BROWSERS_PATH:-/ms-playwright}"
+      PLUGINS_DIR: "/app/plugins/modules"
+      PLUGIN_SDK_DIR: "/app/plugins/sdk/python"
       HTTP_PROXY: "${HTTP_PROXY:-}"
       HTTPS_PROXY: "${HTTPS_PROXY:-}"
       ALL_PROXY: "${ALL_PROXY:-}"
       NO_PROXY: "${NO_PROXY:-}"
-      DATABASE_URL: "postgres://octo:octo@postgres:5432/octomanger?sslmode=disable"
-      DATABASE_AUTO_MIGRATE: "true"
-      DATABASE_RESET: "false"
+      DATABASE_DSN: "postgres://octo:octo@postgres:5432/octomanger?sslmode=disable"
+      REDIS_ADDR: "redis:6379"
     volumes:
-      - ./logs:/app/logs
-      - ./scripts/python/modules:/app/scripts/python/modules
+      - ./plugins:/app/plugins
       - pip_cache:/root/.cache/pip
-      - playwright_cache:${PLAYWRIGHT_BROWSERS_PATH:-/ms-playwright}
 
 volumes:
   pgdata:
-  redisdata:
   pip_cache:
-  playwright_cache:
+  redis_data:

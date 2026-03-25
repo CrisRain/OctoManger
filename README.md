@@ -1,113 +1,208 @@
 # OctoManger
 
-OctoManger 是一个面向多账号运营场景的控制台与执行平台。它把账号类型、账号记录、异步任务、Webhook Trigger、邮箱能力和 Python OctoModule 统一到同一套后台里，适合做批量验证、资料拉取、注册编排、守护监控等自动化流程。
+> **多账号自动化任务管理平台** — 调度、执行、监控，一站式搞定。
 
-## 核心能力
+![Go Version](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go)
+![Vue Version](https://img.shields.io/badge/Vue-3.x-4FC08D?logo=vue.js)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791?logo=postgresql)
+![License](https://img.shields.io/badge/License-待确认-lightgrey)
+![Version](https://img.shields.io/badge/version-0.1.0-blue)
 
-- `generic` 类型账号可绑定 Python OctoModule，按 `action` 执行业务逻辑。
-- `Job + Worker + JobRun` 负责批量执行、失败记录、重试和取消。
-- `Trigger` 可把外部 Webhook 映射成同步或异步任务。
-- 内置 Outlook 邮箱账号管理，支持 OAuth 手动接入、Graph Token 批量导入、邮件读取。
-- 控制台可直接查看和编辑模块脚本、模块目录、依赖环境与运行历史。
-- API Key、系统配置、自签名 TLS、证书上传都在后台内统一管理。
+OctoManger 是一个以 **Plugin-first** 为核心理念的自动化平台。它通过 Python 插件描述对外部系统（GitHub、邮件、自定义 API 等）的操作，再由平台负责调度、执行、日志记录与错误重试。
 
-## 快速体验
+---
+
+## 目录
+
+- [功能特性](#功能特性)
+- [快速开始](#快速开始)
+  - [Docker Compose（推荐）](#docker-compose推荐)
+  - [本地开发](#本地开发)
+- [项目结构](#项目结构)
+- [环境变量](#环境变量)
+- [插件开发](#插件开发)
+- [文档索引](#文档索引)
+- [贡献指南](#贡献指南)
+
+---
+
+## 功能特性
+
+| 功能 | 说明 |
+|------|------|
+| **账号管理** | 统一管理多平台账号凭证，类型由插件声明 |
+| **定时任务** | Cron 表达式调度，支持时区，数据库级分布式锁 |
+| **Webhook 触发** | 公开 Webhook 端点，支持 Token 鉴权与同步/异步两种模式 |
+| **后台 Agent** | 长驻后台进程，具备心跳监控与自动重启 |
+| **邮件账号** | 内置 IMAP/Outlook OAuth 邮件账号管理与消息预览 |
+| **实时日志** | 任务与 Agent 执行日志通过 SSE 实时流式推送 |
+| **插件系统** | Python 插件子进程执行，声明式 JSON Schema 账号类型 |
+| **Web UI** | Vue 3 单页应用，完整的 CRUD 界面与命令面板 |
+
+---
+
+## 快速开始
+
+### Docker Compose（推荐）
 
 ```bash
-docker compose up -d --build
+# 1. 克隆仓库
+git clone <repo-url> && cd OctoManger
+
+# 2. 配置环境（可选：修改 compose 中的默认值）
+# 默认: DB=octomanger, user=octo, password=octo, Redis无密码
+
+# 3. 启动所有服务（PostgreSQL + Redis + API + Worker + 前端）
+docker compose up --build
+
+# 4. 访问 Web UI
+open http://localhost:8080
 ```
 
-如果你要跑依赖 Playwright 的 OctoModule，且主应用在 Docker 里运行，推荐把 OctoModule 服务切到宿主机：
+> `start.sh` 会自动运行数据库迁移，无需手动执行。
+
+### 本地开发
+
+**前置要求**：Go 1.25+、Bun 1.x、PostgreSQL 16、Python 3.x（可选 Redis）
 
 ```bash
-# 1. 在项目根目录创建/修改 .env
-# OCTOMODULE_SERVICE_URL=http://host.docker.internal:8091
-# OCTOMODULE_SERVICE_EMBEDDED=false
+# ── 数据库 ──────────────────────────────────────────────
+export DATABASE_DSN="postgres://octo:octo@localhost:5432/octomanger?sslmode=disable"
 
-# 2. 启动容器内主应用
-docker compose up -d --build
+# 执行 GORM 自动迁移
+go run ./apps/migrate migrate
 
-# 3. 在宿主机单独启动 octomodule service
-cd backend
-$env:PATHS_OCTO_MODULE_DIR="..\scripts\python\modules"
-$env:PYTHON_BIN="python"
-go run ./cmd/octomodule
+# ── 后端 ────────────────────────────────────────────────
+# 启动 API 服务器（监听 :8080）
+go run ./apps/api
+
+# 在另一终端启动 Worker（调度 + 执行）
+go run ./apps/worker
+
+# ── 前端 ────────────────────────────────────────────────
+cd apps/web
+bun install
+bun run dev   # Vite 开发服务器，自动代理 /api/v2 → localhost:8080
 ```
 
-这样 API / Worker 继续留在容器里，Playwright 则在宿主机浏览器环境执行，稳定性会明显好于容器内运行。
+---
 
-如果你仍然要在容器内安装 Chromium，建议同时在 `.env` 里加上下载镜像或代理配置：
+## 项目结构
 
-```env
-# 可替换成你自己的内网制品库 / CDN / 镜像
-PLAYWRIGHT_DOWNLOAD_HOST=https://<your-playwright-mirror>
-PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=120000
-PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-# 如果需要代理，再补这些
-# HTTP_PROXY=http://host.docker.internal:7890
-# HTTPS_PROXY=http://host.docker.internal:7890
 ```
-
-`docker-compose.yml` 已经把这些环境变量透传给 `app` 容器，并持久化了浏览器缓存目录，避免每次重新下载 Chromium。
-
-默认访问地址：
-
-- `https://localhost:8080`
-- `http://localhost:8080` 也可以，会被同端口自动重定向到 HTTPS
-
-首次启动时，如果数据库里还没有证书，服务会自动生成一张自签名证书。浏览器出现证书告警属于预期行为。
-
-## 文档导航
-
-| 文档 | 说明 |
-| --- | --- |
-| [01-快速开始](docs/01-快速开始.md) | 从零启动、初始化后台、跑通第一条任务 |
-| [02-架构说明](docs/02-架构说明.md) | 核心组件、数据流、响应约定 |
-| [03-部署与配置](docs/03-部署与配置.md) | Docker、本地开发、配置项、TLS 行为 |
-| [04-鉴权与API-Key](docs/04-鉴权与API-Key.md) | 初始化、Admin Key、Webhook Key、鉴权边界 |
-| [05-账号类型与账号](docs/05-账号类型与账号.md) | Account Type、Account、脚手架和状态语义 |
-| [06-OctoModule开发指南](docs/06-OctoModule开发指南.md) | 模块输入输出协议、`octo.py`、依赖与 daemon |
-| [07-任务系统](docs/07-任务系统.md) | Job、selector、调度、JobRun、批量任务 |
-| [08-Trigger触发器](docs/08-Trigger触发器.md) | Webhook 接入、同步/异步模式、参数合并 |
-| [09-邮箱账号](docs/09-邮箱账号.md) | Outlook OAuth、Graph 导入、邮件读取、批量生成记录 |
-| [10-系统设置与SSL](docs/10-系统设置与SSL.md) | 系统配置、健康检查、证书上传与本地 TLS |
-
-开发相关补充：
-
-- [GitHub OctoModule](scripts/python/modules/github/README.md)
-- [邮箱批量注册内部说明](docs/dev/邮箱批量注册.md)
-
-## 仓库结构
-
-```text
-.
-├── backend/                 Go API、Worker、Scheduler、Daemon
-├── web/                     Bun + Vite + React 控制台
-├── scripts/python/modules/  OctoModule 脚本与共享 octo.py
-├── configs/                 默认配置文件
-├── docs/                    用户文档与内部文档
+OctoManger/
+├── apps/
+│   ├── api/            # HTTP API 服务器入口
+│   ├── worker/         # Cron 调度器 + 插件执行器入口
+│   ├── migrate/        # 数据库 AutoMigrate 与旧库导入入口
+│   └── web/            # Vue 3 前端（TypeScript + Tailwind CSS）
+├── internal/
+│   ├── domains/        # 8 个业务域（各含 transport/app/domain/infra 四层）
+│   │   ├── account-types/
+│   │   ├── accounts/
+│   │   ├── agents/
+│   │   ├── email/
+│   │   ├── jobs/
+│   │   ├── plugins/
+│   │   ├── system/
+│   │   └── triggers/
+│   └── platform/       # 跨域基础设施（auth、DB、日志、运行时 DI）
+├── plugins/
+│   ├── modules/        # Python 插件模块目录
+│   └── sdk/python/     # octo_runtime Python SDK
 ├── docker-compose.yml
-└── Dockerfile
+├── Dockerfile
+└── go.mod
 ```
 
-## 本地开发
+详细架构说明见 [ARCHITECTURE.md](./ARCHITECTURE.md)。
 
-先启动依赖：
+---
 
-```bash
-docker compose up -d postgres redis
+## 环境变量
+
+| 变量 | 默认值 | 必填 | 说明 |
+|------|--------|:----:|------|
+| `DATABASE_DSN` | — | ✅ | PostgreSQL 连接字符串 |
+| `REDIS_ADDR` | — | ❌ | Redis 地址，缺失时降级运行 |
+| `API_ADDR` | `:8080` | ❌ | HTTP 监听地址 |
+| `API_READ_TIMEOUT` | `15s` | ❌ | API 请求读取超时 |
+| `API_IDLE_TIMEOUT` | `60s` | ❌ | API Keep-Alive 空闲超时 |
+| `WEB_DIST_DIR` | `/app/web-dist` | ❌ | 构建后的前端资源目录 |
+| `PLUGINS_DIR` | `/app/plugins/modules` | ❌ | Python 插件模块目录 |
+| `PLUGIN_SDK_DIR` | `/app/plugins/sdk/python` | ❌ | Python SDK 路径 |
+| `PYTHON_BIN` | `python3` | ❌ | Python 解释器路径 |
+| `PLUGINS_TIMEOUT_ACCOUNT` | `60s` | ❌ | 账号页面直连插件执行超时 |
+| `PLUGINS_TIMEOUT_JOB` | `10m` | ❌ | Job 模式插件执行超时 |
+| `PLUGINS_TIMEOUT_AGENT` | `0s` | ❌ | Agent 模式插件执行超时（`0s`=禁用） |
+| `ADMIN_KEY` | — | ❌ | API 管理员密钥（空则无鉴权，兼容 `X_ADMIN_KEY` / `OCTO_ADMIN_KEY`） |
+| `LOG_LEVEL` | `info` | ❌ | 日志级别（debug/info/warn/error）|
+| `WORKER_POLL_INTERVAL` | — | ❌ | Worker 轮询间隔 |
+
+完整 Worker 变量见 [ARCHITECTURE.md § Worker](./ARCHITECTURE.md#worker)。
+
+---
+
+## 插件开发
+
+插件是位于 `PLUGINS_DIR` 下的 Python 目录，包含：
+
+```
+plugins/modules/my-plugin/
+├── main.py                       # 插件入口
+└── requirements.txt              # Python 依赖
 ```
 
-再分别启动后端和前端：
+推荐写法是使用 `Module(...)` 定义插件能力，账号类型描述会由 SDK 自动生成。
 
-```bash
-cd backend
-SERVER_TLS=false go run ./cmd/octomanger
+**最简 `main.py`：**
+
+```python
+from octo import Module, success
+
+module = Module(
+    key="hello_demo",
+    name="Hello Demo",
+    category="generic",
+    account_schema={
+        "type": "object",
+        "properties": {},
+    },
+)
+
+@module.action("HELLO")
+def hello(req):
+    name = req.input.get("name", "world")
+    return success({"message": f"Hello, {name}!"})
+
+if __name__ == "__main__":
+    module.serve()
 ```
 
-```bash
-cd web
-bun dev
-```
+SDK 文档与完整示例见 `plugins/sdk/python/`。
 
-本地前端开发默认走 Vite 代理到 `http://localhost:8080`，所以调试时建议把后端的 `SERVER_TLS` 设为 `false`。更多命令见 [03-部署与配置](docs/03-部署与配置.md)。
+如果你要从零开始写一个新插件，直接阅读 [PLUGIN_DEVELOPMENT.md](./PLUGIN_DEVELOPMENT.md)。
+
+---
+
+## 文档索引
+
+| 文档 | 内容 |
+|------|------|
+| [ARCHITECTURE.md](./ARCHITECTURE.md) | 系统架构、数据流、模块说明 |
+| [API_REFERENCE.md](./API_REFERENCE.md) | 全量 REST API 端点参考 |
+| [CONTRIBUTING.md](./CONTRIBUTING.md) | 贡献流程、编码规范、PR 指南 |
+| [PLUGIN_DEVELOPMENT.md](./PLUGIN_DEVELOPMENT.md) | 插件开发完整教程 |
+| [CHANGELOG.md](./CHANGELOG.md) | 版本变更历史 |
+
+---
+
+## 贡献指南
+
+欢迎任何形式的贡献！请先阅读 [CONTRIBUTING.md](./CONTRIBUTING.md)。
+
+提交 issue 或 PR 前，请确认：
+- [ ] 后端：`go test ./...` 全部通过
+- [ ] 前端：`bun run build` 无类型错误
+- [ ] 数据库变更：更新 AutoMigrate 模型与兼容逻辑，并验证启动迁移通过
+- [ ] Commit 遵循 Conventional Commits 格式（`feat:` / `fix:` / `docs:`）

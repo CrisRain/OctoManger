@@ -1,0 +1,1960 @@
+openapi: 3.1.0
+info:
+  title: OctoManger API v2
+  version: 2.0.0
+servers:
+  - url: http://localhost:8080
+paths:
+  /healthz:
+    get:
+      operationId: getHealth
+      responses:
+        "200":
+          description: Service health
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+  /api/v2/system/status:
+    get:
+      operationId: getSystemStatus
+      responses:
+        "200":
+          description: Current system status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemStatus"
+  /api/v2/dashboard:
+    get:
+      operationId: getDashboardSummary
+      responses:
+        "200":
+          description: Dashboard summary snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+  /api/v2/config/{key}:
+    get:
+      operationId: getConfig
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: System configuration value
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemConfigValue"
+    put:
+      operationId: setConfig
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - value
+              properties:
+                value: {}
+      responses:
+        "200":
+          description: Updated configuration value
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemConfigValue"
+  /api/v2/plugins:
+    get:
+      operationId: listPlugins
+      responses:
+        "200":
+          description: Installed plugins
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Plugin"
+  /api/v2/plugins/{key}:
+    get:
+      operationId: getPlugin
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Plugin details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Plugin"
+  /api/v2/plugins/sync:
+    post:
+      operationId: syncPlugins
+      responses:
+        "200":
+          description: Plugin account-type sync result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PluginSyncResult"
+  /api/v2/plugins/{key}/settings:
+    get:
+      operationId: getPluginSettings
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Plugin settings object
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+    put:
+      operationId: putPluginSettings
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: Plugin settings save result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PluginSettingsSaveResult"
+  /api/v2/job-definitions:
+    get:
+      operationId: listJobDefinitions
+      responses:
+        "200":
+          description: Job definitions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/JobDefinition"
+    post:
+      operationId: createJobDefinition
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JobDefinitionCreateInput"
+      responses:
+        "201":
+          description: Created job definition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobDefinition"
+  /api/v2/job-definitions/{id}:
+    get:
+      operationId: getJobDefinition
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Job definition detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobDefinition"
+    patch:
+      operationId: patchJobDefinition
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JobDefinitionPatchInput"
+      responses:
+        "200":
+          description: Updated job definition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobDefinition"
+    delete:
+      operationId: deleteJobDefinition
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted job definition
+  /api/v2/job-definitions/{id}/executions:
+    post:
+      operationId: enqueueJobExecution
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "201":
+          description: Enqueued job execution
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobExecution"
+  /api/v2/job-executions:
+    get:
+      operationId: listJobExecutions
+      responses:
+        "200":
+          description: Job executions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/JobExecution"
+  /api/v2/job-executions/{id}:
+    get:
+      operationId: getJobExecution
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Job execution detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobExecution"
+  /api/v2/job-executions/{id}/events:
+    get:
+      operationId: streamJobExecutionEvents
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Job execution SSE stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+  /api/v2/agents:
+    get:
+      operationId: listAgents
+      responses:
+        "200":
+          description: Agent inventory
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Agent"
+    post:
+      operationId: createAgent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentCreateInput"
+      responses:
+        "201":
+          description: Created agent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Agent"
+  /api/v2/agents/{id}:
+    get:
+      operationId: getAgent
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Agent detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Agent"
+    patch:
+      operationId: patchAgent
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentPatchInput"
+      responses:
+        "200":
+          description: Updated agent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Agent"
+    delete:
+      operationId: deleteAgent
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted agent
+  /api/v2/agents/{id}/status:
+    get:
+      operationId: getAgentStatus
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Agent runtime status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentStatus"
+  /api/v2/agents/{id}/start:
+    post:
+      operationId: startAgent
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "202":
+          description: Agent accepted for start
+  /api/v2/agents/{id}/stop:
+    post:
+      operationId: stopAgent
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "202":
+          description: Agent accepted for stop
+  /api/v2/agents/{id}/events:
+    get:
+      operationId: streamAgentEvents
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Agent SSE stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+  /api/v2/account-types:
+    get:
+      operationId: listAccountTypes
+      responses:
+        "200":
+          description: Account types
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AccountType"
+    post:
+      operationId: createAccountType
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AccountTypeCreateInput"
+      responses:
+        "201":
+          description: Created account type
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountType"
+  /api/v2/account-types/{key}:
+    get:
+      operationId: getAccountType
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Account type detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountType"
+    patch:
+      operationId: patchAccountType
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AccountTypePatchInput"
+      responses:
+        "200":
+          description: Updated account type
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountType"
+    delete:
+      operationId: deleteAccountType
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted account type
+  /api/v2/accounts:
+    get:
+      operationId: listAccounts
+      responses:
+        "200":
+          description: Accounts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Account"
+    post:
+      operationId: createAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AccountCreateInput"
+      responses:
+        "201":
+          description: Created account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+  /api/v2/accounts/{id}:
+    get:
+      operationId: getAccount
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Account detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+    patch:
+      operationId: patchAccount
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AccountPatchInput"
+      responses:
+        "200":
+          description: Updated account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+    delete:
+      operationId: deleteAccount
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted account
+  /api/v2/accounts/{id}/execute:
+    post:
+      operationId: executeAccount
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AccountExecuteInput"
+      responses:
+        "200":
+          description: Account action execution result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountExecuteResult"
+  /api/v2/email/accounts:
+    get:
+      operationId: listEmailAccounts
+      responses:
+        "200":
+          description: Email accounts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/EmailAccount"
+    post:
+      operationId: createEmailAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailAccountCreateInput"
+      responses:
+        "201":
+          description: Created email account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailAccount"
+  /api/v2/email/accounts/bulk-import:
+    post:
+      operationId: bulkImportEmailAccounts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailBulkImportInput"
+      responses:
+        "200":
+          description: Bulk import result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailBulkImportResult"
+  /api/v2/email/accounts/{id}:
+    get:
+      operationId: getEmailAccount
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Email account detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailAccount"
+    patch:
+      operationId: patchEmailAccount
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailAccountPatchInput"
+      responses:
+        "200":
+          description: Updated email account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailAccount"
+    delete:
+      operationId: deleteEmailAccount
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted email account
+  /api/v2/email/accounts/{id}/outlook/authorize-url:
+    post:
+      operationId: buildOutlookAuthorizeURL
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Outlook authorize URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OutlookAuthorizeURLResult"
+  /api/v2/email/accounts/{id}/outlook/exchange-code:
+    post:
+      operationId: exchangeOutlookCode
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OutlookExchangeCodeInput"
+      responses:
+        "200":
+          description: Email account updated with exchanged Outlook tokens
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailAccount"
+  /api/v2/email/accounts/{id}/mailboxes:
+    get:
+      operationId: listEmailMailboxes
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: pattern
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Mailboxes available for the configured Outlook account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailMailboxListResult"
+  /api/v2/email/accounts/{id}/messages:
+    get:
+      operationId: listEmailMessages
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: mailbox
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Messages in a mailbox
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailMessageListResult"
+  /api/v2/email/accounts/{id}/messages/latest:
+    get:
+      operationId: getLatestEmailMessage
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: mailbox
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Latest message in the requested mailbox
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailLatestMessageResult"
+  /api/v2/email/accounts/{id}/messages/{message_id}:
+    get:
+      operationId: getEmailMessage
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: message_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Detailed email message payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailMessageDetail"
+  /api/v2/email/preview/mailboxes:
+    post:
+      operationId: previewEmailMailboxes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailPreviewInput"
+      responses:
+        "200":
+          description: Mailbox preview using a draft Outlook config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailMailboxListResult"
+  /api/v2/email/preview/messages/latest:
+    post:
+      operationId: previewLatestEmailMessage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailPreviewInput"
+      responses:
+        "200":
+          description: Latest message preview using a draft Outlook config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailLatestMessageResult"
+  /api/v2/triggers:
+    get:
+      operationId: listTriggers
+      responses:
+        "200":
+          description: Triggers
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Trigger"
+    post:
+      operationId: createTrigger
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TriggerCreateInput"
+      responses:
+        "201":
+          description: Created trigger
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TriggerCreateResult"
+  /api/v2/triggers/{id}:
+    get:
+      operationId: getTrigger
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Trigger detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Trigger"
+    patch:
+      operationId: patchTrigger
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TriggerPatchInput"
+      responses:
+        "200":
+          description: Updated trigger
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Trigger"
+    delete:
+      operationId: deleteTrigger
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted trigger
+  /api/v2/triggers/{id}/fire:
+    post:
+      operationId: fireTrigger
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TriggerFireInput"
+      responses:
+        "200":
+          description: Trigger fire result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TriggerFireResult"
+  /api/v2/webhooks/{key}:
+    post:
+      operationId: fireWebhookTrigger
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TriggerFireInput"
+      responses:
+        "200":
+          description: Trigger fire result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TriggerFireResult"
+components:
+  schemas:
+    SystemConfigValue:
+      type: object
+      required:
+        - key
+        - value
+      properties:
+        key:
+          type: string
+        value: {}
+    SystemStatus:
+      type: object
+      required:
+        - now
+        - database_ok
+        - plugin_count
+      properties:
+        now:
+          type: string
+          format: date-time
+        database_ok:
+          type: boolean
+        plugin_count:
+          type: integer
+    RecentExecution:
+      type: object
+      required:
+        - id
+        - definition_name
+        - plugin_key
+        - action
+        - status
+        - worker_id
+      properties:
+        id:
+          type: integer
+        definition_name:
+          type: string
+        plugin_key:
+          type: string
+        action:
+          type: string
+        status:
+          type: string
+        worker_id:
+          type: string
+    DashboardSummary:
+      type: object
+      required:
+        - pluginCount
+        - accountTypeCount
+        - accountCount
+        - emailAccountCount
+        - jobDefinitionCount
+        - jobExecutionCount
+        - triggerCount
+        - agentCount
+        - recentExecutions
+      properties:
+        pluginCount:
+          type: integer
+        accountTypeCount:
+          type: integer
+        accountCount:
+          type: integer
+        emailAccountCount:
+          type: integer
+        jobDefinitionCount:
+          type: integer
+        jobExecutionCount:
+          type: integer
+        triggerCount:
+          type: integer
+        agentCount:
+          type: integer
+        recentExecutions:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecentExecution"
+    ManifestAction:
+      type: object
+      required:
+        - key
+        - name
+      properties:
+        key:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        modes:
+          type: array
+          items:
+            type: string
+    PluginUIFormField:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        label:
+          type: string
+        type:
+          type: string
+        required:
+          type: boolean
+        description:
+          type: string
+        placeholder:
+          type: string
+        choices:
+          type: array
+          items:
+            type: string
+        default: {}
+      additionalProperties: true
+    PluginUIButton:
+      type: object
+      required:
+        - action
+        - label
+        - form
+      properties:
+        action:
+          type: string
+        label:
+          type: string
+        variant:
+          type: string
+        mode:
+          type: string
+        params:
+          type: object
+          additionalProperties: true
+        form:
+          type: array
+          items:
+            $ref: "#/components/schemas/PluginUIFormField"
+      additionalProperties: true
+    PluginUISection:
+      type: object
+      required:
+        - buttons
+      properties:
+        title:
+          type: string
+        fields:
+          type: array
+          items:
+            type: string
+        buttons:
+          type: array
+          items:
+            $ref: "#/components/schemas/PluginUIButton"
+      additionalProperties: true
+    PluginUITab:
+      type: object
+      required:
+        - key
+        - sections
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        context:
+          type: string
+        sections:
+          type: array
+          items:
+            $ref: "#/components/schemas/PluginUISection"
+      additionalProperties: true
+    PluginUI:
+      type: object
+      properties:
+        tabs:
+          type: array
+          items:
+            $ref: "#/components/schemas/PluginUITab"
+        list_actions:
+          type: array
+          items:
+            $ref: "#/components/schemas/PluginUIButton"
+      additionalProperties: true
+    PluginSetting:
+      type: object
+      required:
+        - key
+        - secret
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        type:
+          type: string
+        secret:
+          type: boolean
+        description:
+          type: string
+        required:
+          type: boolean
+        default: {}
+      additionalProperties: true
+    PluginManifest:
+      type: object
+      required:
+        - key
+        - name
+        - version
+        - description
+        - runtime
+        - entrypoint
+        - capabilities
+        - actions
+      properties:
+        key:
+          type: string
+        name:
+          type: string
+        version:
+          type: string
+        description:
+          type: string
+        runtime:
+          type: string
+        entrypoint:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+        actions:
+          type: array
+          items:
+            $ref: "#/components/schemas/ManifestAction"
+        ui:
+          $ref: "#/components/schemas/PluginUI"
+        settings:
+          type: array
+          items:
+            $ref: "#/components/schemas/PluginSetting"
+    Plugin:
+      type: object
+      required:
+        - manifest
+        - directory
+        - healthy
+      properties:
+        manifest:
+          $ref: "#/components/schemas/PluginManifest"
+        directory:
+          type: string
+        healthy:
+          type: boolean
+    PluginSyncResult:
+      type: object
+      required:
+        - synced
+        - failed
+        - errors
+      properties:
+        synced:
+          type: integer
+        failed:
+          type: integer
+        errors:
+          type: array
+          items:
+            type: string
+    PluginSettingsSaveResult:
+      type: object
+      required:
+        - saved
+      properties:
+        saved:
+          type: boolean
+    Schedule:
+      type: object
+      required:
+        - id
+        - cron_expression
+        - timezone
+        - next_run_at
+        - enabled
+      properties:
+        id:
+          type: integer
+        cron_expression:
+          type: string
+        timezone:
+          type: string
+        next_run_at:
+          type: string
+          format: date-time
+        enabled:
+          type: boolean
+    JobDefinition:
+      type: object
+      required:
+        - id
+        - key
+        - name
+        - plugin_key
+        - action
+        - input
+        - enabled
+      properties:
+        id:
+          type: integer
+        key:
+          type: string
+        name:
+          type: string
+        plugin_key:
+          type: string
+        action:
+          type: string
+        input:
+          type: object
+          additionalProperties: true
+        enabled:
+          type: boolean
+        schedule:
+          $ref: "#/components/schemas/Schedule"
+    JobExecution:
+      type: object
+      required:
+        - id
+        - job_definition_id
+        - definition_key
+        - definition_name
+        - plugin_key
+        - action
+        - status
+        - input
+        - requested_by
+        - source
+      properties:
+        id:
+          type: integer
+        job_definition_id:
+          type: integer
+        definition_key:
+          type: string
+        definition_name:
+          type: string
+        plugin_key:
+          type: string
+        action:
+          type: string
+        status:
+          type: string
+        input:
+          type: object
+          additionalProperties: true
+        requested_by:
+          type: string
+        source:
+          type: string
+        worker_id:
+          type: string
+        summary:
+          type: string
+        error_message:
+          type: string
+    ScheduleInput:
+      type: object
+      required:
+        - cron_expression
+        - enabled
+      properties:
+        cron_expression:
+          type: string
+        timezone:
+          type: string
+        enabled:
+          type: boolean
+    JobDefinitionCreateInput:
+      type: object
+      required:
+        - key
+        - name
+        - plugin_key
+        - action
+        - input
+      properties:
+        key:
+          type: string
+        name:
+          type: string
+        plugin_key:
+          type: string
+        action:
+          type: string
+        input:
+          type: object
+          additionalProperties: true
+        schedule:
+          $ref: "#/components/schemas/ScheduleInput"
+    JobDefinitionPatchInput:
+      type: object
+      properties:
+        name:
+          type: string
+        input:
+          type: object
+          additionalProperties: true
+        enabled:
+          type: boolean
+        schedule:
+          $ref: "#/components/schemas/ScheduleInput"
+    Agent:
+      type: object
+      required:
+        - id
+        - name
+        - plugin_key
+        - action
+        - input
+        - desired_state
+        - runtime_state
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        plugin_key:
+          type: string
+        action:
+          type: string
+        input:
+          type: object
+          additionalProperties: true
+        desired_state:
+          type: string
+        runtime_state:
+          type: string
+        last_error:
+          type: string
+    AgentCreateInput:
+      type: object
+      required:
+        - name
+        - plugin_key
+        - action
+        - input
+      properties:
+        name:
+          type: string
+        plugin_key:
+          type: string
+        action:
+          type: string
+        input:
+          type: object
+          additionalProperties: true
+    AgentPatchInput:
+      type: object
+      properties:
+        name:
+          type: string
+        input:
+          type: object
+          additionalProperties: true
+    AgentStatus:
+      type: object
+      required:
+        - id
+        - runtime_state
+        - desired_state
+        - updated_at
+      properties:
+        id:
+          type: integer
+        runtime_state:
+          type: string
+        desired_state:
+          type: string
+        last_error:
+          type: string
+        last_heartbeat_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    AccountType:
+      type: object
+      required:
+        - id
+        - key
+        - name
+        - category
+        - schema
+        - capabilities
+      properties:
+        id:
+          type: integer
+        key:
+          type: string
+        name:
+          type: string
+        category:
+          type: string
+        schema:
+          type: object
+          additionalProperties: true
+        capabilities:
+          type: object
+          additionalProperties: true
+    AccountTypeCreateInput:
+      type: object
+      required:
+        - key
+        - name
+        - category
+        - schema
+        - capabilities
+      properties:
+        key:
+          type: string
+        name:
+          type: string
+        category:
+          type: string
+        schema:
+          type: object
+          additionalProperties: true
+        capabilities:
+          type: object
+          additionalProperties: true
+    AccountTypePatchInput:
+      type: object
+      properties:
+        name:
+          type: string
+        category:
+          type: string
+        schema:
+          type: object
+          additionalProperties: true
+        capabilities:
+          type: object
+          additionalProperties: true
+    Account:
+      type: object
+      required:
+        - id
+        - identifier
+        - status
+        - tags
+        - spec
+      properties:
+        id:
+          type: integer
+        account_type_id:
+          type: integer
+        account_type_key:
+          type: string
+        identifier:
+          type: string
+        status:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        spec:
+          type: object
+          additionalProperties: true
+    AccountCreateInput:
+      type: object
+      required:
+        - account_type_id
+        - identifier
+        - status
+        - tags
+        - spec
+      properties:
+        account_type_id:
+          type: integer
+        identifier:
+          type: string
+        status:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        spec:
+          type: object
+          additionalProperties: true
+    AccountPatchInput:
+      type: object
+      properties:
+        status:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        spec:
+          type: object
+          additionalProperties: true
+    AccountExecuteInput:
+      type: object
+      required:
+        - action
+      properties:
+        action:
+          type: string
+        params:
+          type: object
+          additionalProperties: true
+    AccountExecuteResult:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+        result:
+          type: object
+          additionalProperties: true
+        error_code:
+          type: string
+        error_message:
+          type: string
+    EmailAccount:
+      type: object
+      required:
+        - id
+        - address
+        - provider
+        - status
+        - config
+      properties:
+        id:
+          type: integer
+        address:
+          type: string
+        provider:
+          type: string
+        status:
+          type: string
+        config:
+          type: object
+          additionalProperties: true
+    EmailAccountCreateInput:
+      type: object
+      required:
+        - address
+        - provider
+        - status
+        - config
+      properties:
+        address:
+          type: string
+        provider:
+          type: string
+        status:
+          type: string
+        config:
+          type: object
+          additionalProperties: true
+    EmailAccountPatchInput:
+      type: object
+      properties:
+        provider:
+          type: string
+        status:
+          type: string
+        config:
+          type: object
+          additionalProperties: true
+    EmailMailbox:
+      type: object
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+    EmailMailboxListResult:
+      type: object
+      required:
+        - items
+      properties:
+        pattern:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/EmailMailbox"
+    EmailMessageSummary:
+      type: object
+      required:
+        - id
+        - subject
+        - from
+        - to
+        - date
+        - size
+        - flags
+      properties:
+        id:
+          type: string
+        subject:
+          type: string
+        from:
+          type: string
+        to:
+          type: string
+        date:
+          type: string
+          format: date-time
+        size:
+          type: integer
+        flags:
+          type: array
+          items:
+            type: string
+    EmailMessageListResult:
+      type: object
+      required:
+        - mailbox
+        - limit
+        - offset
+        - total
+        - items
+      properties:
+        mailbox:
+          type: string
+        limit:
+          type: integer
+        offset:
+          type: integer
+        total:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/EmailMessageSummary"
+    EmailMessageDetail:
+      type: object
+      required:
+        - id
+        - subject
+        - from
+        - to
+        - cc
+        - date
+        - size
+        - flags
+        - headers
+        - text_body
+        - html_body
+      properties:
+        id:
+          type: string
+        subject:
+          type: string
+        from:
+          type: string
+        to:
+          type: string
+        cc:
+          type: string
+        date:
+          type: string
+          format: date-time
+        size:
+          type: integer
+        flags:
+          type: array
+          items:
+            type: string
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+        text_body:
+          type: string
+        html_body:
+          type: string
+    EmailLatestMessageResult:
+      type: object
+      required:
+        - mailbox
+        - found
+      properties:
+        mailbox:
+          type: string
+        found:
+          type: boolean
+        item:
+          $ref: "#/components/schemas/EmailMessageDetail"
+    OutlookAuthorizeURLResult:
+      type: object
+      required:
+        - authorize_url
+      properties:
+        authorize_url:
+          type: string
+          format: uri
+    OutlookExchangeCodeInput:
+      type: object
+      properties:
+        code:
+          type: string
+      required:
+        - code
+    EmailPreviewInput:
+      type: object
+      properties:
+        config:
+          type: object
+          additionalProperties: true
+        mailbox:
+          type: string
+        pattern:
+          type: string
+      required:
+        - config
+    EmailBulkImportInput:
+      type: object
+      required:
+        - lines
+      properties:
+        lines:
+          type: array
+          items:
+            type: string
+    EmailBulkImportLineResult:
+      type: object
+      required:
+        - line
+        - ok
+      properties:
+        line:
+          type: string
+        address:
+          type: string
+        ok:
+          type: boolean
+        error:
+          type: string
+        id:
+          type: integer
+    EmailBulkImportResult:
+      type: object
+      required:
+        - total
+        - success
+        - failed
+        - items
+      properties:
+        total:
+          type: integer
+        success:
+          type: integer
+        failed:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/EmailBulkImportLineResult"
+    Trigger:
+      type: object
+      required:
+        - id
+        - key
+        - name
+        - job_definition_id
+        - mode
+        - default_input
+        - token_prefix
+        - enabled
+      properties:
+        id:
+          type: integer
+        key:
+          type: string
+        name:
+          type: string
+        job_definition_id:
+          type: integer
+        mode:
+          type: string
+        default_input:
+          type: object
+          additionalProperties: true
+        token_prefix:
+          type: string
+        enabled:
+          type: boolean
+    TriggerCreateInput:
+      type: object
+      required:
+        - key
+        - name
+        - job_definition_id
+        - mode
+        - default_input
+        - enabled
+      properties:
+        key:
+          type: string
+        name:
+          type: string
+        job_definition_id:
+          type: integer
+        mode:
+          type: string
+        default_input:
+          type: object
+          additionalProperties: true
+        enabled:
+          type: boolean
+    TriggerPatchInput:
+      type: object
+      properties:
+        name:
+          type: string
+        mode:
+          type: string
+        enabled:
+          type: boolean
+    TriggerCreateResult:
+      type: object
+      required:
+        - trigger
+        - delivery_token
+      properties:
+        trigger:
+          $ref: "#/components/schemas/Trigger"
+        delivery_token:
+          type: string
+    TriggerFireInput:
+      type: object
+      additionalProperties: true
+    TriggerFireResult:
+      type: object
+      required:
+        - mode
+        - trigger_key
+      properties:
+        mode:
+          type: string
+        trigger_key:
+          type: string
+        execution_id:
+          type: integer
+        result:
+          type: object
+          additionalProperties: true
+        events:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
