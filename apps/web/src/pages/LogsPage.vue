@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
-import { useSystemStatus } from "@/composables/useDashboard";
+import { useAutoRefresh } from "@/composables/useAutoRefresh";
+import { useSystemLogs, useSystemStatus } from "@/composables/useDashboard";
 import { useJobExecutions, useJobExecutionStream } from "@/composables/useJobs";
 import { useAgents, useAgentEventStream } from "@/composables/useAgents";
 import { PageHeader } from "@/components/index";
@@ -8,6 +9,53 @@ import LogTerminal from "@/components/LogTerminal.vue";
 
 // ── System status ──────────────────────────────────────────────────────────
 const { data: statusData } = useSystemStatus();
+
+// ── System runtime logs ───────────────────────────────────────────────────
+const activeTab = ref("system");
+const searchKeyword = ref("");
+const levelFilter = ref("");
+const { data: systemLogs, loading: loadingSystemLogs, error: systemLogsError, refresh: refreshSystemLogs } = useSystemLogs(200);
+useAutoRefresh(refreshSystemLogs, { intervalMs: 5000, immediate: false });
+
+const systemLevelOptions = [
+  { label: "全部", value: "" },
+  { label: "错误", value: "error" },
+  { label: "警告", value: "warn" },
+  { label: "信息", value: "info" },
+  { label: "调试", value: "debug" },
+];
+
+const filteredSystemLogs = computed(() => {
+  const keyword = searchKeyword.value.trim().toLowerCase();
+  return systemLogs.value.filter((item) => {
+    if (levelFilter.value && item.level !== levelFilter.value) {
+      return false;
+    }
+    if (!keyword) {
+      return true;
+    }
+    const haystacks = [
+      item.message,
+      item.source,
+      item.logger,
+      item.caller,
+      JSON.stringify(item.fields ?? {}),
+    ];
+    return haystacks.some((value) => value?.toLowerCase().includes(keyword));
+  });
+});
+
+const systemLogLines = computed(() =>
+  [...filteredSystemLogs.value]
+    .reverse()
+    .map((item) =>
+      JSON.stringify({
+        event_type: item.source || item.logger || "system",
+        message: item.message,
+        payload: item.fields ?? {},
+      })
+    )
+);
 
 // ── Job executions ─────────────────────────────────────────────────────────
 const { data: executions } = useJobExecutions();
@@ -37,8 +85,6 @@ function selectAgent(id: number) {
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
-const activeTab = ref("jobs");
-
 const execStatusColor: Record<string, string> = {
   pending:   "gray",
   running:   "blue",
@@ -69,7 +115,7 @@ function dotClass(state: string | undefined) { return agentDot[state ?? ""] ?? "
   <div class="page-shell logs-page">
     <PageHeader
       title="日志与观测"
-      subtitle="查看任务执行日志和 Agent 事件流"
+      subtitle="查看系统运行日志、任务执行日志和 Agent 事件流"
       icon-bg="linear-gradient(135deg, rgba(10,132,255,0.12), rgba(10,132,255,0.06))"
       icon-color="var(--accent)"
     >
@@ -101,7 +147,68 @@ function dotClass(state: string | undefined) { return agentDot[state ?? ""] ?? "
     <!-- ── Tabs ─────────────────────────────────────────────────────────── -->
     <ui-tabs v-model:active-key="activeTab" class="panel-surface p-4" :destroy-on-hide="false">
 
-      <!-- ── Tab 1: Job executions ──────────────────────────────────────── -->
+      <!-- ── Tab 1: System runtime logs ─────────────────────────────────── -->
+      <ui-tab-pane key="system">
+        <template #title>
+          <div class="inline-flex items-center gap-2"><icon-file /> 系统运行日志</div>
+        </template>
+
+        <div class="flex flex-col gap-4">
+          <div class="panel-surface flex flex-col gap-3 border border-slate-200 bg-slate-50/80 px-4 py-3 shadow-sm">
+            <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div class="flex min-w-0 flex-1 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
+                <icon-search class="h-4 w-4 flex-shrink-0 text-slate-400" />
+                <input
+                  v-model="searchKeyword"
+                  type="text"
+                  placeholder="搜索消息、来源、调用点或字段…"
+                  class="min-w-0 flex-1 bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400"
+                />
+              </div>
+              <div class="flex items-center justify-between gap-3 lg:justify-end">
+                <div class="text-xs font-medium text-slate-500">
+                  共 {{ filteredSystemLogs.length }} / {{ systemLogs.length }} 条
+                </div>
+                <ui-button size="small" :loading="loadingSystemLogs" @click="refreshSystemLogs">
+                  <template #icon><icon-refresh /></template>
+                  刷新
+                </ui-button>
+              </div>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="text-xs font-medium text-slate-500">级别：</span>
+              <button
+                v-for="option in systemLevelOptions"
+                :key="option.value"
+                type="button"
+                class="filter-chip"
+                :class="{ active: levelFilter === option.value }"
+                @click="levelFilter = option.value"
+              >
+                {{ option.label }}
+              </button>
+            </div>
+          </div>
+
+          <div
+            v-if="systemLogsError"
+            class="panel-surface border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+          >
+            系统日志加载失败：{{ systemLogsError }}
+          </div>
+
+          <LogTerminal
+            class="min-h-[520px]"
+            :logs="systemLogLines"
+            :is-live="loadingSystemLogs"
+            title="系统运行日志"
+            empty-label="暂无系统运行日志"
+          />
+        </div>
+      </ui-tab-pane>
+
+      <!-- ── Tab 2: Job executions ──────────────────────────────────────── -->
       <ui-tab-pane key="jobs">
         <template #title>
           <div class="inline-flex items-center gap-2"><icon-schedule /> 任务执行日志</div>
@@ -147,7 +254,7 @@ function dotClass(state: string | undefined) { return agentDot[state ?? ""] ?? "
         </div>
       </ui-tab-pane>
 
-      <!-- ── Tab 2: Agent events ─────────────────────────────────────────── -->
+      <!-- ── Tab 3: Agent events ─────────────────────────────────────────── -->
       <ui-tab-pane key="agents">
         <template #title>
           <div class="inline-flex items-center gap-2"><icon-robot /> Agent 事件流</div>

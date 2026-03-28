@@ -2,6 +2,12 @@ package accountdomain
 
 import "time"
 
+const (
+	StatusPending  = "pending"
+	StatusActive   = "active"
+	StatusInactive = "inactive"
+)
+
 type Account struct {
 	ID             int64          `json:"id"`
 	AccountTypeID  *int64         `json:"account_type_id,omitempty"`

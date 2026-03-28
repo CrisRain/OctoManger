@@ -1,31 +1,37 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { useAccount } from "@/composables/useAccounts";
+import { useAccount, useAccounts } from "@/composables/useAccounts";
 import { useMessage } from "@/composables";
 import { useExecuteAccount } from "@/composables/useAccounts";
 import { usePlugins } from "@/composables/usePlugins";
 import { useCreateJobDefinition, useEnqueueJobExecution } from "@/composables/useJobs";
-import { useCreateAgent } from "@/composables/useAgents";
+import { useCreateAgent, useStartAgent } from "@/composables/useAgents";
+import { PluginUIButtonForm } from "@/components/index";
 import { to } from "@/router/registry";
 import type {
   AccountExecuteResult,
   PluginUIButton,
-  PluginUIFormField,
   PluginUITab,
 } from "@/types";
+import {
+  createPluginUIButtonFormState,
+  resolvePluginUIButtonInput,
+} from "@/utils/pluginUI";
 
 const route = useRoute();
 const router = useRouter();
 const accountId = Number(route.params.id);
 const message = useMessage();
 
-const { data: account, loading } = useAccount(accountId);
+const { data: account, loading, refresh: refreshAccount } = useAccount(accountId);
+const { data: allAccounts } = useAccounts();
 const { data: plugins } = usePlugins();
 const executeAccount = useExecuteAccount();
 const createJobDefinition = useCreateJobDefinition();
 const enqueueJobExecution = useEnqueueJobExecution();
 const createAgent = useCreateAgent();
+const startAgent = useStartAgent();
 
 const plugin = computed(() => {
   if (!account.value?.account_type_key) return null;
@@ -56,7 +62,10 @@ const activeTab = ref("info");
 
 // Whether this plugin has custom UI tabs defined
 const hasUITabs = computed(() =>
-  (plugin.value?.manifest.ui?.tabs?.length ?? 0) > 0
+  ((plugin.value?.manifest.ui?.tabs ?? []).filter((tab) => {
+    const context = String(tab.context ?? "").trim();
+    return context === "" || context === "account";
+  }).length) > 0
 );
 
 // ── Custom UI execution ───────────────────────────────────────────────────
@@ -64,7 +73,16 @@ const hasUITabs = computed(() =>
 const activeUITab = ref<string>("");
 
 const pluginActionTabs = computed<PluginUITab[]>(() =>
-  (plugin.value?.manifest.ui?.tabs ?? []).filter((tab) => tab.context !== "create")
+  (plugin.value?.manifest.ui?.tabs ?? []).filter((tab) => {
+    const context = String(tab.context ?? "").trim();
+    return context === "" || context === "account";
+  })
+);
+
+const fallbackActions = computed(() =>
+  (plugin.value?.manifest.ui?.tabs?.length ?? 0) > 0
+    ? []
+    : (plugin.value?.manifest.actions ?? [])
 );
 
 watch(
@@ -82,27 +100,67 @@ watch(
 );
 
 // Per-button form state: Map<button type="button"Action, formValues>
-const formValues = ref<Record<string, Record<string, string>>>({});
+const formValues = ref<Record<string, Record<string, unknown>>>({});
+const formErrors = ref<Record<string, Record<string, string>>>({});
 const execResults = ref<Record<string, AccountExecuteResult | null>>({});
 const execLoading = ref<Record<string, boolean>>({});
 
 function initForm(button: PluginUIButton) {
   if (!formValues.value[button.action]) {
-    const vals: Record<string, string> = {};
-    for (const f of button.form) {
-      vals[f.name] = "";
-    }
-    formValues.value[button.action] = vals;
+    formValues.value[button.action] = createPluginUIButtonFormState(button);
+  }
+  if (!formErrors.value[button.action]) {
+    formErrors.value[button.action] = {};
   }
 }
 
-function fieldValue(action: string, name: string): string {
-  return formValues.value[action]?.[name] ?? "";
+function updateForm(action: string, value: Record<string, unknown>) {
+  formValues.value[action] = value;
+  if (formErrors.value[action] && Object.keys(formErrors.value[action]).length > 0) {
+    formErrors.value[action] = {};
+  }
 }
 
-function setFieldValue(action: string, name: string, val: string) {
-  if (!formValues.value[action]) formValues.value[action] = {};
-  formValues.value[action][name] = val;
+function isVerificationAction(action: string): boolean {
+  return /verify|validate/i.test(action);
+}
+
+function buildAccountReferenceInput(params: Record<string, unknown>) {
+  if (!account.value) {
+    return Object.keys(params).length > 0 ? { params } : {};
+  }
+
+  const input: Record<string, unknown> = {
+    account: {
+      id: account.value.id,
+      identifier: account.value.identifier,
+    },
+  };
+  if (Object.keys(params).length > 0) {
+    input.params = params;
+  }
+  return input;
+}
+
+async function createAndStartAgent(action: string, label: string, params: Record<string, unknown>) {
+  if (!account.value || !plugin.value) return;
+
+  const agent = await createAgent.execute({
+    name: `${label} (${account.value.identifier})`,
+    plugin_key: plugin.value.manifest.key,
+    action,
+    input: buildAccountReferenceInput(params),
+  });
+
+  try {
+    await startAgent.execute(agent.id);
+    message.success(`已创建并启动常驻任务：${label}`);
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : "请在详情页重试";
+    message.warning(`已创建常驻任务，但启动失败：${detail}`);
+  }
+
+  router.push(to.agents.detail(agent.id));
 }
 
 async function executeButton(button: PluginUIButton) {
@@ -110,10 +168,12 @@ async function executeButton(button: PluginUIButton) {
   execLoading.value[button.action] = true;
   execResults.value[button.action] = null;
   try {
-    const params: Record<string, unknown> = {
-      ...button.params,
-      ...formValues.value[button.action],
-    };
+    const { params } = resolvePluginUIButtonInput(
+      button,
+      formValues.value[button.action] ?? {},
+      allAccounts.value,
+      { bindAccountContext: false },
+    );
 
     if (button.mode === "job") {
       const jobKey = `${plugin.value!.manifest.key}-${button.action.toLowerCase()}-${Date.now()}`;
@@ -122,33 +182,25 @@ async function executeButton(button: PluginUIButton) {
         name: `${button.label} (${account.value.identifier})`,
         plugin_key: plugin.value!.manifest.key,
         action: button.action,
-        input: { params, account: { id: account.value.id, identifier: account.value.identifier, spec: account.value.spec } },
+        input: buildAccountReferenceInput(params),
       });
       const exec = await enqueueJobExecution.execute(jobDef.id);
       message.success(`已提交后台作业：${button.label}`);
       router.push(to.jobs.executionDetail(exec.id));
     } else if (button.mode === "agent") {
-      const agent = await createAgent.execute({
-        name: `${button.label} (${account.value.identifier})`,
-        plugin_key: plugin.value!.manifest.key,
-        action: button.action,
-        input: { params, account: { id: account.value.id, identifier: account.value.identifier, spec: account.value.spec } },
-      });
-      message.success(`已创建常驻任务：${button.label}`);
-      router.push(to.agents.detail(agent.id));
+      await createAndStartAgent(button.action, button.label, params);
     } else {
       const res = await executeAccount.execute(accountId, button.action, params);
       execResults.value[button.action] = res;
+      if (isVerificationAction(button.action)) {
+        await refreshAccount();
+      }
     }
   } catch (e) {
     message.error(e instanceof Error ? e.message : "执行失败");
   } finally {
     execLoading.value[button.action] = false;
   }
-}
-
-function isSecretField(field: PluginUIFormField): boolean {
-  return SECRET_KEYS.has(field.name.toLowerCase()) || field.type === "password";
 }
 
 // ── Fallback: flat action list (no ui.tabs) ───────────────────────────────
@@ -187,23 +239,19 @@ async function handleExecute() {
         name: `${selectedAction.value} (${account.value.identifier})`,
         plugin_key: plugin.value!.manifest.key,
         action: selectedAction.value,
-        input: { params, account: { id: account.value.id, identifier: account.value.identifier, spec: account.value.spec } },
+        input: buildAccountReferenceInput(params),
       });
       const exec = await enqueueJobExecution.execute(jobDef.id);
       message.success(`已提交后台作业：${selectedAction.value}`);
       router.push(to.jobs.executionDetail(exec.id));
     } else if (mode === "agent") {
-      const agent = await createAgent.execute({
-        name: `${selectedAction.value} (${account.value.identifier})`,
-        plugin_key: plugin.value!.manifest.key,
-        action: selectedAction.value,
-        input: { params, account: { id: account.value.id, identifier: account.value.identifier, spec: account.value.spec } },
-      });
-      message.success(`已创建常驻任务：${selectedAction.value}`);
-      router.push(to.agents.detail(agent.id));
+      await createAndStartAgent(selectedAction.value, selectedAction.value, params);
     } else {
       const res = await executeAccount.execute(accountId, selectedAction.value, params);
       execResult.value = res;
+      if (isVerificationAction(selectedAction.value)) {
+        await refreshAccount();
+      }
     }
   } catch (e) {
     message.error(e instanceof Error ? e.message : "执行失败");
@@ -212,7 +260,12 @@ async function handleExecute() {
 
 const statusColor: Record<string, string> = { active: "green", pending: "gray", inactive: "gray" };
 const statusDot: Record<string, string> = { active: "bg-emerald-500 animate-pulse", pending: "bg-slate-400", inactive: "bg-slate-300" };
-const actionCount = computed(() => plugin.value?.manifest.actions?.length ?? 0);
+const actionCount = computed(() => {
+  if (hasUITabs.value) {
+    return pluginActionTabs.value.reduce((total, tab) => total + countTabButtons(tab), 0);
+  }
+  return fallbackActions.value.length;
+});
 const tagCount = computed(() => account.value?.tags?.length ?? 0);
 
 const pluginDisplayName = computed(() => {
@@ -250,7 +303,9 @@ function countTabButtons(tab: { sections: Array<{ buttons: PluginUIButton[] }> }
 }
 
 function describeButtonMode(button: PluginUIButton) {
-  return button.mode === "job" ? "作业模式" : "即时模式";
+  if (button.mode === "job") return "作业模式";
+  if (button.mode === "agent") return "Agent 模式";
+  return "即时模式";
 }
 
 function describeButtonForm(button: PluginUIButton) {
@@ -259,7 +314,7 @@ function describeButtonForm(button: PluginUIButton) {
 }
 
 const selectedActionMeta = computed(() =>
-  plugin.value?.manifest.actions.find((action) => action.key === selectedAction.value) ?? null
+  fallbackActions.value.find((action) => action.key === selectedAction.value) ?? null
 );
 </script>
 
@@ -583,7 +638,10 @@ const selectedActionMeta = computed(() =>
                               </div>
                             </div>
 
-                            <div class="grid grid-cols-1 gap-4 p-4 lg:grid-cols-2">
+                            <div
+                              class="grid grid-cols-1 gap-4 p-4"
+                              :class="section.buttons.length > 1 ? 'lg:grid-cols-2' : 'lg:grid-cols-1'"
+                            >
                               <article
                                 v-for="button in section.buttons"
                                 :key="button.action"
@@ -603,51 +661,19 @@ const selectedActionMeta = computed(() =>
                                   <span class="flex-shrink-0 rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-xs font-mono font-semibold text-slate-500">{{ button.form.length ? "表单" : "直接执行" }}</span>
                                 </div>
 
-                                <ui-form
+                                <div
                                   v-if="button.form.length"
-                                  layout="vertical"
                                   class="ui-button-form flex flex-col gap-3"
-                                  :model="formValues[button.action] ?? {}"
-                                  @vue:mounted="initForm(button)"
                                 >
-                                  <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                    <ui-form-item
-                                      v-for="field in button.form"
-                                      :key="field.name"
-                                      class="mb-0"
-                                    >
-                                      <template #label>
-                                        <span>{{ field.name }}</span>
-                                        <ui-tag v-if="field.required" size="small" color="red" class="ml-1">必填</ui-tag>
-                                        <span v-if="field.description" class="ml-1 text-xs font-normal text-slate-400">— {{ field.description }}</span>
-                                      </template>
-
-                                      <ui-select
-                                        v-if="field.choices?.length"
-                                        :model-value="fieldValue(button.action, field.name)"
-                                        allow-clear
-                                        :placeholder="field.required ? '必填' : '可选'"
-                                        @change="(v: string) => setFieldValue(button.action, field.name, v)"
-                                      >
-                                        <ui-option v-for="c in field.choices" :key="c" :value="c">{{ c }}</ui-option>
-                                      </ui-select>
-                                      <ui-input
-                                        v-else-if="isSecretField(field)"
-                                        :model-value="fieldValue(button.action, field.name)"
-                                        type="password"
-                                        allow-clear
-                                        :placeholder="field.required ? '必填' : '可选'"
-                                        @update:model-value="(v: string) => setFieldValue(button.action, field.name, v)"
-                                      />
-                                      <ui-input
-                                        v-else
-                                        :model-value="fieldValue(button.action, field.name)"
-                                        allow-clear
-                                        :placeholder="field.required ? '必填' : '可选'"
-                                        @update:model-value="(v: string) => setFieldValue(button.action, field.name, v)"
-                                      />
-                                    </ui-form-item>
-                                  </div>
+                                  <PluginUIButtonForm
+                                    :fields="button.form"
+                                    :model-value="formValues[button.action] ?? {}"
+                                    :errors="formErrors[button.action] ?? {}"
+                                    :accounts="allAccounts"
+                                    :default-account-type-key="plugin.manifest.key"
+                                    @vue:mounted="initForm(button)"
+                                    @update:model-value="updateForm(button.action, $event)"
+                                  />
 
                                   <ui-button
                                     type="primary"
@@ -658,7 +684,7 @@ const selectedActionMeta = computed(() =>
                                     <template #icon><icon-play-arrow /></template>
                                     {{ button.label }}
                                   </ui-button>
-                                </ui-form>
+                                </div>
 
                                 <div v-else class="flex flex-col gap-3">
                                   <p class="text-xs text-slate-500">此操作无需额外输入字段，可直接执行。</p>
@@ -718,7 +744,7 @@ const selectedActionMeta = computed(() =>
 
                   <div class="flex flex-1 flex-col gap-1 overflow-y-auto p-2">
                     <button
-                      v-for="act in plugin.manifest.actions"
+                      v-for="act in fallbackActions"
                       :key="act.key"
                       type="button"
                       class="flex cursor-pointer flex-col gap-1 rounded-xl border border-transparent p-3 text-left bg-white/30 [transition-property:background-color,_border-color,_box-shadow,_transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 hover:border-slate-200 hover:bg-white hover:-translate-y-px"
@@ -732,7 +758,7 @@ const selectedActionMeta = computed(() =>
                       <p class="m-0 text-sm font-medium text-slate-900">{{ act.name }}</p>
                       <p v-if="act.description" class="m-0 text-xs text-slate-500">{{ act.description }}</p>
                     </button>
-                    <ui-empty v-if="!plugin.manifest.actions.length" description="该插件未注册任何操作" />
+                    <ui-empty v-if="!fallbackActions.length" description="该插件未提供账号级操作" />
                   </div>
                 </aside>
 

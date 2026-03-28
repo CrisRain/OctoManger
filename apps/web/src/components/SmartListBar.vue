@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from "vue";
+import { ref, computed, watch, useSlots } from "vue";
 import {
   IconSearch, IconFilter, IconCheck, IconClose,
   IconRefresh, IconDownload, IconDelete
@@ -9,10 +9,10 @@ interface Props<T = any> {
   data: T[];
   loading?: boolean;
   selectable?: boolean;
-  rowKey?: string | ((record: T) => string);
+  rowKey?: string | ((record: T) => string | number);
   search?: string;
   filters?: Record<string, any>;
-  selectedKeys?: string[];
+  selectedKeys?: Array<string | number>;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -30,6 +30,8 @@ const emit = defineEmits<{
   (e: "batch-delete", items: any[]): void;
   (e: "batch-export", items: any[]): void;
 }>();
+
+const slots = useSlots();
 
 // 搜索和筛选
 const searchKeyword = ref(props.search ?? "");
@@ -55,13 +57,17 @@ watch(
 );
 
 // 选择状态
-const selectedKeys = ref<string[]>(props.selectedKeys ? [...props.selectedKeys] : []);
+function normalizeSelectionKeys(keys: Array<string | number> | undefined): string[] {
+  return (keys ?? []).map((key) => String(key));
+}
+
+const selectedKeys = ref<string[]>(normalizeSelectionKeys(props.selectedKeys));
 
 watch(
   () => props.selectedKeys,
   (value) => {
     if (value !== undefined) {
-      selectedKeys.value = [...value];
+      selectedKeys.value = normalizeSelectionKeys(value);
     }
   }
 );
@@ -75,9 +81,10 @@ const isIndeterminate = computed(() => {
 // 获取行的唯一键
 const getRowKey = (record: any, index: number): string => {
   if (typeof props.rowKey === "function") {
-    return props.rowKey(record);
+    return String(props.rowKey(record));
   }
-  return record[props.rowKey] || String(index);
+  const value = record?.[props.rowKey];
+  return value != null ? String(value) : String(index);
 };
 
 // 切换全选
@@ -111,6 +118,9 @@ const selectedItems = computed(() => {
     selectedKeys.value.includes(getRowKey(item, index))
   );
 });
+const hasSelection = computed(() => selectedItems.value.length > 0);
+const hasDesktopBatchActions = computed(() => Boolean(slots["batch-actions"]));
+const hasMobileBatchActions = computed(() => Boolean(slots["mobile-batch-actions"]));
 
 // 清空选择
 function clearSelection() {
@@ -165,7 +175,78 @@ defineExpose({
 </script>
 
 <template>
-  <div class="mb-5">
+  <div class="mb-5 space-y-3">
+    <!-- 独立批量操作栏 -->
+    <div
+      class="panel-surface flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+      :role="hasSelection ? 'toolbar' : undefined"
+      aria-label="批量操作"
+    >
+      <div class="flex items-start gap-3 sm:items-center">
+        <div
+          class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl shadow-sm"
+          :class="hasSelection ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500'"
+        >
+          <icon-check class="h-4 w-4" aria-hidden="true" />
+        </div>
+        <div class="min-w-0">
+          <div class="text-sm font-semibold text-slate-900">批量操作</div>
+          <div v-if="hasSelection" class="text-xs text-slate-500">
+            已选择
+            <span aria-live="polite">{{ selectedItems.length }}</span>
+            项，可继续执行自定义动作、导出或删除。
+          </div>
+          <div v-else class="text-xs text-slate-500">勾选列表项后，可在这里执行批量处理。</div>
+        </div>
+      </div>
+
+      <div v-if="hasSelection" class="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          class="inline-flex h-8 items-center rounded-lg px-3 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50"
+          @click="clearSelection"
+        >
+          清空选择
+        </button>
+
+        <template v-if="hasDesktopBatchActions">
+          <div class="hidden items-center gap-2 lg:flex">
+            <slot name="batch-actions" :selected-items="selectedItems" :clear-selection="clearSelection" />
+          </div>
+        </template>
+        <template v-if="hasMobileBatchActions">
+          <div class="flex items-center gap-2 lg:hidden">
+            <slot name="mobile-batch-actions" :selected-items="selectedItems" :clear-selection="clearSelection" />
+          </div>
+        </template>
+        <template v-else-if="hasDesktopBatchActions">
+          <div class="flex items-center gap-2 lg:hidden">
+            <slot name="batch-actions" :selected-items="selectedItems" :clear-selection="clearSelection" />
+          </div>
+        </template>
+
+        <button
+          type="button"
+          aria-label="导出选中项"
+          class="inline-flex h-8 items-center gap-1 rounded-lg px-3 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50"
+          @click="handleBatchExport"
+        >
+          <icon-download class="h-4 w-4" aria-hidden="true" />
+          导出
+        </button>
+        <button
+          type="button"
+          aria-label="删除选中项"
+          class="inline-flex h-8 items-center gap-1 rounded-lg bg-red-50 px-3 text-sm font-medium text-red-600 transition-colors hover:bg-red-100 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/50"
+          @click="handleBatchDelete"
+        >
+          <icon-delete class="h-4 w-4" aria-hidden="true" />
+          删除
+        </button>
+      </div>
+      <div v-else class="text-xs font-medium text-slate-400">尚未选择项目</div>
+    </div>
+
     <!-- 搜索和操作栏 -->
     <div class="panel-surface flex items-center gap-2 px-3 py-2.5">
       <!-- 搜索框 -->
@@ -192,51 +273,26 @@ defineExpose({
 
       <!-- 操作按钮组 -->
       <div class="flex flex-shrink-0 items-center gap-1">
-        <!-- 选中时的批量操作 -->
-        <template v-if="selectedItems.length > 0">
-          <span class="mr-1 text-xs font-medium text-slate-600" aria-live="polite">{{ selectedItems.length }} 已选</span>
-          <button type="button" class="rounded-md px-2 py-1 text-xs text-slate-600 hover:text-slate-900 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50" @click="clearSelection">清空</button>
-          <div class="h-4 w-px bg-slate-200 mx-0.5" aria-hidden="true" />
-          <!-- h-7 visual + before: 44px 触控区 -->
-          <button type="button"
-            aria-label="导出选中项"
-            class="relative inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-slate-500 transition-all hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 before:absolute before:-inset-[8px] before:content-['']"
-            @click="handleBatchExport"
-          >
-            <icon-download class="h-4 w-4" aria-hidden="true" />
-          </button>
-          <button type="button"
-            aria-label="删除选中项"
-            class="relative inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-red-500 transition-all hover:bg-red-50 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/50 before:absolute before:-inset-[8px] before:content-['']"
-            @click="handleBatchDelete"
-          >
-            <icon-delete class="h-4 w-4" aria-hidden="true" />
-          </button>
-        </template>
+        <button type="button"
+          :aria-label="showFilters ? '收起筛选' : '展开筛选'"
+          :aria-expanded="showFilters"
+          aria-controls="smart-list-filter-panel"
+          class="relative inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-slate-500 transition-all hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 before:absolute before:-inset-[8px] before:content-['']"
+          :class="{ 'bg-slate-100 text-slate-700': showFilters }"
+          @click="showFilters = !showFilters"
+        >
+          <icon-filter class="h-4 w-4" aria-hidden="true" />
+        </button>
 
-        <!-- 常规操作 -->
-        <template v-else>
-          <button type="button"
-            :aria-label="showFilters ? '收起筛选' : '展开筛选'"
-            :aria-expanded="showFilters"
-            aria-controls="smart-list-filter-panel"
-            class="relative inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-slate-500 transition-all hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 before:absolute before:-inset-[8px] before:content-['']"
-            :class="{ 'bg-slate-100 text-slate-700': showFilters }"
-            @click="showFilters = !showFilters"
-          >
-            <icon-filter class="h-4 w-4" aria-hidden="true" />
-          </button>
+        <button type="button"
+          aria-label="刷新列表"
+          class="relative inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-slate-500 transition-all hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 before:absolute before:-inset-[8px] before:content-['']"
+          @click="handleRefresh"
+        >
+          <icon-refresh class="h-4 w-4" aria-hidden="true" />
+        </button>
 
-          <button type="button"
-            aria-label="刷新列表"
-            class="relative inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-slate-500 transition-all hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 before:absolute before:-inset-[8px] before:content-['']"
-            @click="handleRefresh"
-          >
-            <icon-refresh class="h-4 w-4" aria-hidden="true" />
-          </button>
-
-          <slot name="extra-actions" />
-        </template>
+        <slot name="extra-actions" />
       </div>
     </div>
 
@@ -267,16 +323,5 @@ defineExpose({
       </div>
     </div>
 
-    <!-- 批量操作栏 (移动端) -->
-    <div v-if="selectedItems.length > 0" class="mt-2 flex items-center justify-between rounded-xl bg-slate-900 px-4 py-3 text-white shadow-md lg:hidden" role="toolbar" aria-label="批量操作">
-      <div class="flex items-center gap-2 text-sm font-medium">
-        <icon-check class="h-4 w-4" aria-hidden="true" />
-        <span aria-live="polite">已选择 {{ selectedItems.length }} 项</span>
-      </div>
-      <div class="flex items-center gap-2">
-        <button type="button" class="cursor-pointer rounded-lg border-0 bg-white/20 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-white/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50" @click="clearSelection">取消</button>
-        <button type="button" class="cursor-pointer rounded-lg border-0 bg-red-500 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300/50" @click="handleBatchDelete">删除</button>
-      </div>
-    </div>
   </div>
 </template>

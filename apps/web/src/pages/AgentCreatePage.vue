@@ -1,21 +1,18 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
-import { IconRobot } from "@/lib/icons";
 
 import { FormActionBar, FormPageLayout, PageHeader, SmartForm } from "@/components/index";
-import { useAccounts, useMessage, useErrorHandler, usePlugins } from "@/composables";
+import { useMessage, useErrorHandler, usePlugins } from "@/composables";
 import { useCreateAgent } from "@/composables/useAgents";
-import type { Account } from "@/types";
 import type { FieldConfig } from "@/components/smart-form.types";
 import { to } from "@/router/registry";
-import { buildAgentInput, formatAccountOptionLabel, parseAgentParamsJSON } from "@/utils/agentForm";
+import { buildAgentInput, parseAgentParamsJSON } from "@/utils/agentForm";
 
 const router = useRouter();
 const message = useMessage();
 const { withErrorHandler } = useErrorHandler();
 const create = useCreateAgent();
-const { data: accounts } = useAccounts();
 const { data: plugins } = usePlugins();
 
 // 表单引用
@@ -26,7 +23,6 @@ const formData = ref({
   name: "",
   plugin_key: "",
   action: "",
-  account_id: "",
   params_json: "{}",
 });
 
@@ -50,34 +46,9 @@ const actionOptions = computed(() =>
   })),
 );
 
-const filteredAccounts = computed(() =>
-  accounts.value.filter((account) => {
-    if (!formData.value.plugin_key) {
-      return true;
-    }
-    return account.account_type_key === formData.value.plugin_key;
-  }),
-);
-
-const accountOptions = computed(() =>
-  filteredAccounts.value.map((account) => ({
-    label: formatAccountOptionLabel(account),
-    value: String(account.id),
-  })),
-);
-
-const selectedAccount = computed<Account | null>(() =>
-  filteredAccounts.value.find((account) => String(account.id) === formData.value.account_id)
-  ?? accounts.value.find((account) => String(account.id) === formData.value.account_id)
-  ?? null,
-);
-
 watch(() => formData.value.plugin_key, () => {
   if (!actionOptions.value.some((option) => option.value === formData.value.action)) {
     formData.value.action = "";
-  }
-  if (!accountOptions.value.some((option) => option.value === formData.value.account_id)) {
-    formData.value.account_id = "";
   }
 });
 
@@ -109,21 +80,11 @@ const formFields = computed<FieldConfig[]>(() => [
     options: actionOptions.value,
   },
   {
-    name: "account_id",
-    label: "关联账号",
-    type: "select",
-    placeholder: accountOptions.value.length ? "从账号库中选择一个账号" : "当前插件下暂无账号",
-    description: formData.value.plugin_key
-      ? "提交时会自动写入 input.account"
-      : "先选择插件，再从账号库中挑选对应账号",
-    options: accountOptions.value,
-  },
-  {
     name: "params_json",
     label: "动作参数 (JSON)",
     type: "textarea",
     placeholder: '{"interval_seconds":60}',
-    description: "将写入 input.params，必须是 JSON 对象",
+    description: "仅写入 input.params；账号获取与其他插件内逻辑由插件代码自行处理",
     rows: 6,
   },
 ]);
@@ -150,7 +111,7 @@ async function handleSubmit() {
         name: formData.value.name.trim(),
         plugin_key: formData.value.plugin_key.trim(),
         action: formData.value.action.trim(),
-        input: buildAgentInput(selectedAccount.value, params),
+        input: buildAgentInput(params),
       });
       message.success("Agent 已创建");
       router.push(to.agents.list());

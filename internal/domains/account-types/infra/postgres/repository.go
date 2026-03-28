@@ -2,14 +2,15 @@ package accounttypepostgres
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	accounttypedomain "octomanger/internal/domains/account-types/domain"
+	"octomanger/internal/platform/database"
 	"octomanger/internal/platform/dbutil"
 )
 
@@ -24,58 +25,58 @@ func New(db *gorm.DB) Repository {
 }
 
 func (r Repository) List(ctx context.Context) ([]accounttypedomain.AccountType, error) {
-	rows, err := r.db.WithContext(ctx).Raw(`
-		SELECT id, key, name, category, schema_json, capabilities_json, created_at, updated_at
-		FROM account_types
-		ORDER BY created_at DESC`).Rows()
-	if err != nil {
-		return nil, fmt.Errorf("list account types: %w", err)
-	}
-	defer rows.Close()
+	items, _, err := r.ListPage(ctx, 0, 0)
+	return items, err
+}
 
-	items := make([]accounttypedomain.AccountType, 0)
-	for rows.Next() {
-		item, err := scanAccountType(rows)
-		if err != nil {
-			return nil, err
-		}
-		items = append(items, item)
+func (r Repository) ListPage(ctx context.Context, limit int, offset int) ([]accounttypedomain.AccountType, int64, error) {
+	var total int64
+	if err := r.db.WithContext(ctx).
+		Model(&database.AccountTypeModel{}).
+		Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("count account types: %w", err)
 	}
-	return items, rows.Err()
+
+	var records []database.AccountTypeModel
+	query := r.db.WithContext(ctx).Order("created_at DESC")
+	if limit > 0 {
+		query = query.Limit(limit).Offset(offset)
+	}
+	if err := query.Find(&records).Error; err != nil {
+		return nil, 0, fmt.Errorf("list account types: %w", err)
+	}
+
+	items := make([]accounttypedomain.AccountType, len(records))
+	for i, record := range records {
+		items[i] = toDomainAccountType(record)
+	}
+	return items, total, nil
 }
 
 func (r Repository) GetByKey(ctx context.Context, key string) (*accounttypedomain.AccountType, error) {
-	row := r.db.WithContext(ctx).Raw(`
-		SELECT id, key, name, category, schema_json, capabilities_json, created_at, updated_at
-		FROM account_types
-		WHERE key = $1`, key).Row()
-	item, err := scanAccountType(row)
-	if err != nil {
-		return nil, err
+	var record database.AccountTypeModel
+	if err := r.db.WithContext(ctx).
+		First(&record, "key = ?", key).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("get account type: %w", err)
 	}
+
+	item := toDomainAccountType(record)
 	return &item, nil
 }
 
 func (r Repository) Create(ctx context.Context, input accounttypedomain.CreateInput) (*accounttypedomain.AccountType, error) {
-	schemaJSON, err := json.Marshal(dbutil.NormalizeMap(input.Schema))
+	record, err := newAccountTypeRecord(input)
 	if err != nil {
-		return nil, fmt.Errorf("marshal schema: %w", err)
+		return nil, err
 	}
-	capabilitiesJSON, err := json.Marshal(dbutil.NormalizeMap(input.Capabilities))
-	if err != nil {
-		return nil, fmt.Errorf("marshal capabilities: %w", err)
-	}
-
-	row := r.db.WithContext(ctx).Raw(`
-		INSERT INTO account_types (key, name, category, schema_json, capabilities_json)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id, key, name, category, schema_json, capabilities_json, created_at, updated_at`,
-		input.Key, input.Name, input.Category, schemaJSON, capabilitiesJSON,
-	).Row()
-	item, err := scanAccountType(row)
-	if err != nil {
+	if err := r.db.WithContext(ctx).Create(&record).Error; err != nil {
 		return nil, fmt.Errorf("create account type: %w", err)
 	}
+
+	item := toDomainAccountType(record)
 	return &item, nil
 }
 
@@ -107,52 +108,47 @@ func (r Repository) Patch(ctx context.Context, key string, input accounttypedoma
 		return nil, fmt.Errorf("marshal capabilities: %w", err)
 	}
 
-	row := r.db.WithContext(ctx).Raw(`
-		UPDATE account_types
-		SET name = $2, category = $3, schema_json = $4, capabilities_json = $5, updated_at = NOW()
-		WHERE key = $1
-		RETURNING id, key, name, category, schema_json, capabilities_json, created_at, updated_at`,
-		key, current.Name, current.Category, schemaJSON, capabilitiesJSON,
-	).Row()
-	item, err := scanAccountType(row)
-	if err != nil {
-		return nil, fmt.Errorf("patch account type: %w", err)
+	result := r.db.WithContext(ctx).
+		Model(&database.AccountTypeModel{}).
+		Where("key = ?", key).
+		Updates(map[string]any{
+			"name":              current.Name,
+			"category":          current.Category,
+			"schema_json":       schemaJSON,
+			"capabilities_json": capabilitiesJSON,
+		})
+	if result.Error != nil {
+		return nil, fmt.Errorf("patch account type: %w", result.Error)
 	}
-	return &item, nil
+	if result.RowsAffected == 0 {
+		return nil, ErrNotFound
+	}
+
+	return r.GetByKey(ctx, key)
 }
 
-// Upsert inserts an account type or updates name/category/schema/capabilities if the key already exists.
 func (r Repository) Upsert(ctx context.Context, input accounttypedomain.CreateInput) (*accounttypedomain.AccountType, error) {
-	schemaJSON, err := json.Marshal(dbutil.NormalizeMap(input.Schema))
+	record, err := newAccountTypeRecord(input)
 	if err != nil {
-		return nil, fmt.Errorf("marshal schema: %w", err)
-	}
-	capabilitiesJSON, err := json.Marshal(dbutil.NormalizeMap(input.Capabilities))
-	if err != nil {
-		return nil, fmt.Errorf("marshal capabilities: %w", err)
+		return nil, err
 	}
 
-	row := r.db.WithContext(ctx).Raw(`
-		INSERT INTO account_types (key, name, category, schema_json, capabilities_json)
-		VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT (key) DO UPDATE SET
-			name              = EXCLUDED.name,
-			category          = EXCLUDED.category,
-			schema_json       = EXCLUDED.schema_json,
-			capabilities_json = EXCLUDED.capabilities_json,
-			updated_at        = NOW()
-		RETURNING id, key, name, category, schema_json, capabilities_json, created_at, updated_at`,
-		input.Key, input.Name, input.Category, schemaJSON, capabilitiesJSON,
-	).Row()
-	item, err := scanAccountType(row)
-	if err != nil {
+	if err := r.db.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "key"}},
+			DoUpdates: clause.AssignmentColumns([]string{"name", "category", "schema_json", "capabilities_json", "updated_at"}),
+		}).
+		Create(&record).Error; err != nil {
 		return nil, fmt.Errorf("upsert account type: %w", err)
 	}
-	return &item, nil
+
+	return r.GetByKey(ctx, input.Key)
 }
 
 func (r Repository) Delete(ctx context.Context, key string) error {
-	result := r.db.WithContext(ctx).Exec(`DELETE FROM account_types WHERE key = $1`, key)
+	result := r.db.WithContext(ctx).
+		Where("key = ?", key).
+		Delete(&database.AccountTypeModel{})
 	if result.Error != nil {
 		return fmt.Errorf("delete account type: %w", result.Error)
 	}
@@ -162,25 +158,34 @@ func (r Repository) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
-type scanner interface {
-	Scan(dest ...any) error
-}
-
-func scanAccountType(row scanner) (accounttypedomain.AccountType, error) {
-	var item accounttypedomain.AccountType
-	var schemaJSON, capabilitiesJSON []byte
-	if err := row.Scan(
-		&item.ID, &item.Key, &item.Name, &item.Category,
-		&schemaJSON, &capabilitiesJSON,
-		&item.CreatedAt, &item.UpdatedAt,
-	); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return accounttypedomain.AccountType{}, ErrNotFound
-		}
-		return accounttypedomain.AccountType{}, fmt.Errorf("scan account type: %w", err)
+func newAccountTypeRecord(input accounttypedomain.CreateInput) (database.AccountTypeModel, error) {
+	schemaJSON, err := json.Marshal(dbutil.NormalizeMap(input.Schema))
+	if err != nil {
+		return database.AccountTypeModel{}, fmt.Errorf("marshal schema: %w", err)
 	}
-	item.Schema = dbutil.DecodeJSONMap(schemaJSON)
-	item.Capabilities = dbutil.DecodeJSONMap(capabilitiesJSON)
-	return item, nil
+	capabilitiesJSON, err := json.Marshal(dbutil.NormalizeMap(input.Capabilities))
+	if err != nil {
+		return database.AccountTypeModel{}, fmt.Errorf("marshal capabilities: %w", err)
+	}
+
+	return database.AccountTypeModel{
+		Key:              input.Key,
+		Name:             input.Name,
+		Category:         input.Category,
+		SchemaJSON:       database.JSONBytes(schemaJSON),
+		CapabilitiesJSON: database.JSONBytes(capabilitiesJSON),
+	}, nil
 }
 
+func toDomainAccountType(record database.AccountTypeModel) accounttypedomain.AccountType {
+	return accounttypedomain.AccountType{
+		ID:           record.ID,
+		Key:          record.Key,
+		Name:         record.Name,
+		Category:     record.Category,
+		Schema:       dbutil.DecodeJSONMap([]byte(record.SchemaJSON)),
+		Capabilities: dbutil.DecodeJSONMap([]byte(record.CapabilitiesJSON)),
+		CreatedAt:    record.CreatedAt,
+		UpdatedAt:    record.UpdatedAt,
+	}
+}

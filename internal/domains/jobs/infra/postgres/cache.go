@@ -3,11 +3,14 @@ package jobpostgres
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
+	"gorm.io/gorm"
+
 	jobdomain "octomanger/internal/domains/jobs/domain"
-	"octomanger/internal/platform/dbutil"
+	"octomanger/internal/platform/database"
 )
 
 const (
@@ -118,48 +121,41 @@ func (r Repository) refreshExecutionLogsCache(ctx context.Context, executionID i
 }
 
 func (r Repository) loadRecentExecutionLogs(ctx context.Context, executionID int64) ([]jobdomain.JobLog, error) {
-	rows, err := r.db.WithContext(ctx).Raw(`
-		SELECT id, job_execution_id, stream, event_type, message, payload_json, created_at
-		FROM (
-			SELECT id, job_execution_id, stream, event_type, message, payload_json, created_at
-			FROM job_logs
-			WHERE job_execution_id = $1
-			ORDER BY id DESC
-			LIMIT $2
-		) recent
-		ORDER BY id ASC`, executionID, jobLogRetentionLimit).Rows()
-	if err != nil {
+	var records []database.JobLogModel
+	if err := r.db.WithContext(ctx).
+		Where("job_execution_id = ?", executionID).
+		Order("id DESC").
+		Limit(jobLogRetentionLimit).
+		Find(&records).Error; err != nil {
 		return nil, fmt.Errorf("load recent execution logs: %w", err)
 	}
-	defer rows.Close()
 
-	items := make([]jobdomain.JobLog, 0)
-	for rows.Next() {
-		var item jobdomain.JobLog
-		var payloadJSON []byte
-		if err := rows.Scan(&item.ID, &item.JobExecutionID, &item.Stream, &item.EventType, &item.Message, &payloadJSON, &item.CreatedAt); err != nil {
-			return nil, fmt.Errorf("scan execution log: %w", err)
-		}
-		item.Payload = dbutil.DecodeJSONMap(payloadJSON)
-		items = append(items, item)
+	items := make([]jobdomain.JobLog, len(records))
+	for i := range records {
+		items[len(records)-1-i] = toDomainJobLog(records[i])
 	}
-	return items, rows.Err()
+	return items, nil
 }
 
 func (r Repository) trimExecutionLogs(ctx context.Context, executionID int64) error {
-	result := r.db.WithContext(ctx).Exec(`
-		DELETE FROM job_logs
-		WHERE job_execution_id = $1
-		  AND id < COALESCE((
-			SELECT id
-			FROM job_logs
-			WHERE job_execution_id = $1
-			ORDER BY id DESC
-			OFFSET $2
-			LIMIT 1
-		  ), 0)`, executionID, jobLogRetentionLimit-1)
-	if result.Error != nil {
-		return fmt.Errorf("trim execution logs: %w", result.Error)
+	var threshold database.JobLogModel
+	err := r.db.WithContext(ctx).
+		Where("job_execution_id = ?", executionID).
+		Order("id DESC").
+		Offset(jobLogRetentionLimit - 1).
+		Limit(1).
+		Take(&threshold).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return fmt.Errorf("trim execution logs threshold: %w", err)
+	}
+
+	if err := r.db.WithContext(ctx).
+		Where("job_execution_id = ? AND id < ?", executionID, threshold.ID).
+		Delete(&database.JobLogModel{}).Error; err != nil {
+		return fmt.Errorf("trim execution logs: %w", err)
 	}
 	return nil
 }

@@ -129,7 +129,7 @@ sequenceDiagram
 | `X-Admin-Key` | `{key}` |
 | `Authorization` | `Bearer {key}` |
 
-> **开发模式**：若 `ADMIN_KEY` 环境变量为空，中间件为 no-op，所有请求均通过；同时兼容旧变量 `X_ADMIN_KEY` / `OCTO_ADMIN_KEY`。
+> **开发模式**：若 `ADMIN_KEY` 环境变量为空，中间件为 no-op，所有请求均通过。
 
 ---
 
@@ -355,7 +355,7 @@ erDiagram
 
 - 结构定义位于 `internal/platform/database/models.go`
 - 启动迁移入口位于 `internal/platform/database/auto_migrate.go`
-- `apps/migrate` 负责执行 AutoMigrate，并保留旧库导入能力
+- `apps/octomanger` 是唯一启动入口，启动时会自动执行 GORM AutoMigrate
 - 历史兼容变更或 GORM 无法表达的索引，会在 AutoMigrate 过程中补充显式 SQL
 
 ---

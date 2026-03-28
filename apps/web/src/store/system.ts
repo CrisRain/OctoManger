@@ -1,13 +1,15 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
-import { getDashboardSummary, getSystemStatus } from "@/api";
-import type { DashboardSummary, SystemStatus } from "@/types";
+import { getDashboardSummary, getSystemLogs, getSystemStatus } from "@/api";
+import type { DashboardSummary, SystemLogEntry, SystemStatus } from "@/types";
 
 export const useSystemStore = defineStore("system", () => {
   const systemStatus = ref<SystemStatus | null>(null);
   const dashboardSummary = ref<DashboardSummary | null>(null);
+  const systemLogs = ref<SystemLogEntry[]>([]);
   const loadingStatus = ref(false);
   const loadingDashboard = ref(false);
+  const loadingLogs = ref(false);
   const error = ref<string | null>(null);
 
   async function fetchSystemStatus() {
@@ -34,13 +36,28 @@ export const useSystemStore = defineStore("system", () => {
     }
   }
 
+  async function fetchSystemLogs(limit = 200) {
+    loadingLogs.value = true;
+    error.value = null;
+    try {
+      systemLogs.value = await getSystemLogs(limit);
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : "请求失败";
+    } finally {
+      loadingLogs.value = false;
+    }
+  }
+
   return {
     systemStatus,
     dashboardSummary,
+    systemLogs,
     loadingStatus,
     loadingDashboard,
+    loadingLogs,
     error,
     fetchSystemStatus,
     fetchDashboardSummary,
+    fetchSystemLogs,
   };
 });

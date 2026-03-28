@@ -20,6 +20,7 @@ const (
 type Batcher[T any] struct {
 	ch       chan T
 	flushFn  func(context.Context, []T) error
+	onError  func(error) // optional; called when flushFn returns an error
 	interval time.Duration
 	maxBatch int
 	wg       sync.WaitGroup
@@ -33,6 +34,14 @@ func New[T any](flushFn func(context.Context, []T) error) *Batcher[T] {
 		interval: defaultFlushInterval,
 		maxBatch: defaultMaxBatch,
 	}
+}
+
+// WithErrorHandler attaches a callback that is invoked whenever flushFn returns
+// a non-nil error.  Use this to log or record flush failures instead of
+// silently discarding them.
+func (b *Batcher[T]) WithErrorHandler(fn func(error)) *Batcher[T] {
+	b.onError = fn
+	return b
 }
 
 // Add enqueues an entry. If the internal buffer is full the entry is dropped
@@ -95,6 +104,8 @@ func (b *Batcher[T]) Wait() {
 }
 
 func (b *Batcher[T]) doFlush(ctx context.Context, batch *[]T) {
-	_ = b.flushFn(ctx, *batch)
+	if err := b.flushFn(ctx, *batch); err != nil && b.onError != nil {
+		b.onError(err)
+	}
 	*batch = (*batch)[:0]
 }

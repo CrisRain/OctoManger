@@ -11,35 +11,40 @@ import (
 	accounttypeapp "octomanger/internal/domains/account-types/app"
 	accounttypedomain "octomanger/internal/domains/account-types/domain"
 	accounttypepostgres "octomanger/internal/domains/account-types/infra/postgres"
-	"octomanger/internal/platform/auth"
 	"octomanger/internal/platform/httpx"
 )
 
 type Handler struct {
-	adminKey string
-	service  accounttypeapp.Service
+	service accounttypeapp.Service
 }
 
-func NewHandler(adminKey string, service accounttypeapp.Service) Handler {
-	return Handler{adminKey: adminKey, service: service}
+func NewHandler(service accounttypeapp.Service) Handler {
+	return Handler{service: service}
 }
 
 func (h Handler) Register(r *route.RouterGroup) {
-	guard := auth.RequireAdmin(h.adminKey)
 	r.GET("/account-types", h.list)
-	r.POST("/account-types", guard, h.create)
+	r.POST("/account-types", h.create)
 	r.GET("/account-types/:key", h.get)
-	r.PATCH("/account-types/:key", guard, h.patch)
-	r.DELETE("/account-types/:key", guard, h.delete)
+	r.PATCH("/account-types/:key", h.patch)
+	r.DELETE("/account-types/:key", h.delete)
 }
 
 func (h Handler) list(ctx context.Context, c *app.RequestContext) {
-	items, err := h.service.List(ctx)
+	page, err := httpx.ParsePageRequest(c)
+	if err != nil {
+		httpx.BadRequest(ctx, c, err.Error())
+		return
+	}
+	items, total, err := h.service.ListPage(ctx, page.Limit, page.Offset)
 	if err != nil {
 		httpx.InternalServerError(ctx, c, err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, map[string]any{"items": items})
+	c.JSON(http.StatusOK, map[string]any{
+		"items":      items,
+		"pagination": httpx.BuildPageMeta(page, total),
+	})
 }
 
 func (h Handler) get(ctx context.Context, c *app.RequestContext) {

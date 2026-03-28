@@ -27,7 +27,6 @@ const accountType = computed(() =>
 // ── Form state ──────────────────────────────────────────────────────────────
 const formRef = ref<InstanceType<typeof SmartForm>>();
 const formData = ref({
-  status: "active",
   tags: "",
 });
 const spec = ref<Record<string, string>>({});
@@ -62,7 +61,6 @@ const specFields = computed((): SpecField[] => {
 // Seed form when account loads
 watch(account, (acc) => {
   if (!acc) return;
-  formData.value.status = acc.status;
   formData.value.tags = (acc.tags ?? []).join(", ");
 }, { immediate: true });
 
@@ -94,7 +92,6 @@ async function handleSave() {
 
   try {
     await patch.execute(accountId, {
-      status: formData.value.status,
       tags: formData.value.tags.split(",").map((t) => t.trim()).filter(Boolean),
       spec: specPayload,
     });
@@ -107,17 +104,6 @@ async function handleSave() {
 }
 
 const formFields = computed<FieldConfig[]>(() => [
-  {
-    name: "status",
-    label: "状态",
-    type: "select",
-    required: true,
-    options: [
-      { label: "已激活", value: "active" },
-      { label: "待验证", value: "pending" },
-      { label: "已停用", value: "inactive" },
-    ],
-  },
   {
     name: "tags",
     label: "标签",
@@ -162,6 +148,9 @@ const formFields = computed<FieldConfig[]>(() => [
             v-model="formData"
             :fields="formFields"
           />
+          <p class="mt-3 text-sm leading-6 text-slate-500">
+            账号状态会根据验证结果自动更新，这里仅维护标签和凭据配置。
+          </p>
 
           <ui-form layout="vertical" class="mt-4">
             <template v-if="specFields.length">

@@ -71,3 +71,38 @@ func TestVirtualEnvPythonPath(t *testing.T) {
 		t.Fatalf("unexpected venv python path %q", got)
 	}
 }
+
+func TestIsLowValueDependencyLogLine(t *testing.T) {
+	cases := []struct {
+		line string
+		want bool
+	}{
+		{line: "Requirement already satisfied: grpcio", want: true},
+		{line: "Collecting requests", want: true},
+		{line: "Successfully installed a b c", want: true},
+		{line: "Starting server", want: false},
+	}
+	for _, tc := range cases {
+		got := isLowValueDependencyLogLine(tc.line)
+		if got != tc.want {
+			t.Fatalf("line %q: expected %v, got %v", tc.line, tc.want, got)
+		}
+	}
+}
+
+func TestIsInformationalPluginStderr(t *testing.T) {
+	cases := []struct {
+		line string
+		want bool
+	}{
+		{line: "[octo_demo] 以 gRPC 微服务模式启动，监听 127.0.0.1:50051", want: true},
+		{line: "INFO: boot complete", want: true},
+		{line: "panic: boom", want: false},
+	}
+	for _, tc := range cases {
+		got := isInformationalPluginStderr(tc.line)
+		if got != tc.want {
+			t.Fatalf("line %q: expected %v, got %v", tc.line, tc.want, got)
+		}
+	}
+}

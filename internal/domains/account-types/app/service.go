@@ -19,6 +19,10 @@ func (s Service) List(ctx context.Context) ([]accounttypedomain.AccountType, err
 	return s.repo.List(ctx)
 }
 
+func (s Service) ListPage(ctx context.Context, limit int, offset int) ([]accounttypedomain.AccountType, int64, error) {
+	return s.repo.ListPage(ctx, limit, offset)
+}
+
 func (s Service) GetByKey(ctx context.Context, key string) (*accounttypedomain.AccountType, error) {
 	return s.repo.GetByKey(ctx, key)
 }

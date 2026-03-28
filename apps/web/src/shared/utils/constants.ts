@@ -126,7 +126,6 @@ export const REFRESH_INTERVALS = {
  * 本地存储键
  */
 export const STORAGE_KEYS = {
-  ADMIN_KEY: "octo_admin_key",
   THEME: "octo_theme",
   SIDEBAR_COLLAPSED: "octo_sidebar_collapsed",
 } as const;

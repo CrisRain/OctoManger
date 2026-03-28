@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import {
   IconEmail, IconImport, IconEye, IconEdit, IconDelete, IconPlus
@@ -9,6 +10,8 @@ import { useEmailAccountsList } from "@/composables/useEmailAccountsList";
 import { to } from "@/router/registry";
 
 const router = useRouter();
+
+const selectedKeys = ref<string[]>([]);
 
 const columns = [
   { title: "ID", width: "80", slotName: "id" },
@@ -36,6 +39,8 @@ const {
   handleBatchDelete,
   handleBatchExport,
 } = useEmailAccountsList();
+
+watch(filteredAccounts, () => { selectedKeys.value = []; });
 </script>
 
 <template>
@@ -64,6 +69,7 @@ const {
       :data="filteredAccounts"
       :loading="loading"
       v-model:search="searchKeyword"
+      v-model:selectedKeys="selectedKeys"
       @refresh="refresh"
       @batch-delete="handleBatchDelete"
       @batch-export="handleBatchExport"
@@ -143,6 +149,7 @@ const {
         :bordered="false"
         row-key="id"
         :row-selection="{ type: 'checkbox' }"
+        v-model:selectedKeys="selectedKeys"
       >
         <!-- ID -->
         <template #id="{ record }">

@@ -52,34 +52,26 @@ git clone <repo-url> && cd OctoManger
 # 2. 配置环境（可选：修改 compose 中的默认值）
 # 默认: DB=octomanger, user=octo, password=octo, Redis无密码
 
-# 3. 启动所有服务（PostgreSQL + Redis + API + Worker + 前端）
+# 3. 启动所有服务（PostgreSQL + Redis + 单一后端入口）
 docker compose up --build
 
 # 4. 访问 Web UI
 open http://localhost:8080
 ```
 
-> `start.sh` 会自动运行数据库迁移，无需手动执行。
+> 容器内的 `octomanger` 会在启动时自动执行 GORM AutoMigrate，并直接提供内嵌 Web UI。
 
 ### 本地开发
 
 **前置要求**：Go 1.25+、Bun 1.x、PostgreSQL 16、Python 3.x（可选 Redis）
 
 ```bash
-# ── 数据库 ──────────────────────────────────────────────
 export DATABASE_DSN="postgres://octo:octo@localhost:5432/octomanger?sslmode=disable"
 
-# 执行 GORM 自动迁移
-go run ./apps/migrate migrate
+# 启动完整系统（自动 migrate + API + Worker + 内嵌 Web UI）
+go run ./apps/octomanger
 
-# ── 后端 ────────────────────────────────────────────────
-# 启动 API 服务器（监听 :8080）
-go run ./apps/api
-
-# 在另一终端启动 Worker（调度 + 执行）
-go run ./apps/worker
-
-# ── 前端 ────────────────────────────────────────────────
+# 前端开发调试
 cd apps/web
 bun install
 bun run dev   # Vite 开发服务器，自动代理 /api/v2 → localhost:8080
@@ -92,9 +84,7 @@ bun run dev   # Vite 开发服务器，自动代理 /api/v2 → localhost:8080
 ```
 OctoManger/
 ├── apps/
-│   ├── api/            # HTTP API 服务器入口
-│   ├── worker/         # Cron 调度器 + 插件执行器入口
-│   ├── migrate/        # 数据库 AutoMigrate 与旧库导入入口
+│   ├── octomanger/     # 唯一 Go 启动入口
 │   └── web/            # Vue 3 前端（TypeScript + Tailwind CSS）
 ├── internal/
 │   ├── domains/        # 8 个业务域（各含 transport/app/domain/infra 四层）
@@ -106,7 +96,7 @@ OctoManger/
 │   │   ├── plugins/
 │   │   ├── system/
 │   │   └── triggers/
-│   └── platform/       # 跨域基础设施（auth、DB、日志、运行时 DI）
+│   └── platform/       # 跨域基础设施（auth、DB、日志、运行时 DI、嵌入式 Web UI）
 ├── plugins/
 │   ├── modules/        # Python 插件模块目录
 │   └── sdk/python/     # octo_runtime Python SDK
@@ -128,18 +118,26 @@ OctoManger/
 | `API_ADDR` | `:8080` | ❌ | HTTP 监听地址 |
 | `API_READ_TIMEOUT` | `15s` | ❌ | API 请求读取超时 |
 | `API_IDLE_TIMEOUT` | `60s` | ❌ | API Keep-Alive 空闲超时 |
-| `WEB_DIST_DIR` | `/app/web-dist` | ❌ | 构建后的前端资源目录 |
 | `PLUGINS_DIR` | `/app/plugins/modules` | ❌ | Python 插件模块目录 |
 | `PLUGIN_SDK_DIR` | `/app/plugins/sdk/python` | ❌ | Python SDK 路径 |
 | `PYTHON_BIN` | `python3` | ❌ | Python 解释器路径 |
 | `PLUGINS_TIMEOUT_ACCOUNT` | `60s` | ❌ | 账号页面直连插件执行超时 |
 | `PLUGINS_TIMEOUT_JOB` | `10m` | ❌ | Job 模式插件执行超时 |
 | `PLUGINS_TIMEOUT_AGENT` | `0s` | ❌ | Agent 模式插件执行超时（`0s`=禁用） |
-| `ADMIN_KEY` | — | ❌ | API 管理员密钥（空则无鉴权，兼容 `X_ADMIN_KEY` / `OCTO_ADMIN_KEY`） |
+| `ADMIN_KEY` / `ADMIN_KEYS` | — | ✅（生产） | API 管理员密钥；`ADMIN_KEYS` 支持逗号分隔多密钥轮换，未配置时所有受保护端点将拒绝访问 |
+| `PLUGIN_INTERNAL_API_TOKEN` | `ADMIN_KEYS` 第一项或 `ADMIN_KEY` | ❌ | 插件内部 API 专用令牌（建议与管理员密钥分离） |
 | `LOG_LEVEL` | `info` | ❌ | 日志级别（debug/info/warn/error）|
 | `WORKER_POLL_INTERVAL` | — | ❌ | Worker 轮询间隔 |
 
 完整 Worker 变量见 [ARCHITECTURE.md § Worker](./ARCHITECTURE.md#worker)。
+
+## 二进制打包
+
+```bash
+make build
+```
+
+`make build` 会先构建前端并将产物嵌入二进制，最终输出 `bin/octomanger`。
 
 ---
 

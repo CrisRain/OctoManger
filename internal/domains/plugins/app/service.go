@@ -23,7 +23,7 @@ type Repository interface {
 }
 
 type SettingsStore interface {
-	GetConfig(ctx context.Context, key string) (json.RawMessage, error)
+	GetSettings(ctx context.Context, pluginKey string) (json.RawMessage, error)
 }
 
 type ExecutionTimeouts struct {
@@ -32,12 +32,19 @@ type ExecutionTimeouts struct {
 	Agent   time.Duration
 }
 
+type InternalAPIConfig struct {
+	URL            string
+	Token          string
+	TimeoutSeconds int
+}
+
 type Service struct {
 	repo              Repository
 	pythonBin         string
 	sdkDir            string
 	settingsStore     SettingsStore
 	executionTimeouts ExecutionTimeouts
+	internalAPI       InternalAPIConfig
 }
 
 func New(repo Repository, pythonBin string, sdkDir string) Service {
@@ -56,6 +63,11 @@ func (s Service) WithSettingsStore(store SettingsStore) Service {
 
 func (s Service) WithExecutionTimeouts(timeouts ExecutionTimeouts) Service {
 	s.executionTimeouts = normalizeExecutionTimeouts(timeouts)
+	return s
+}
+
+func (s Service) WithInternalAPI(config InternalAPIConfig) Service {
+	s.internalAPI = normalizeInternalAPIConfig(config)
 	return s
 }
 
@@ -216,13 +228,23 @@ func (s Service) Execute(
 }
 
 func (s Service) injectSettings(ctx context.Context, pluginKey string, request plugindomain.ExecutionRequest) (plugindomain.ExecutionRequest, error) {
+	if request.Context == nil {
+		request.Context = map[string]any{}
+	}
+	request.Context["plugin_key"] = strings.TrimSpace(pluginKey)
+	if s.internalAPI.URL != "" {
+		request.Context["api_url"] = s.internalAPI.URL
+	}
+	if s.internalAPI.Token != "" {
+		request.Context["api_token"] = s.internalAPI.Token
+	}
+	if s.internalAPI.TimeoutSeconds > 0 {
+		request.Context["api_timeout_seconds"] = s.internalAPI.TimeoutSeconds
+	}
+
 	settings, err := s.loadSettings(ctx, pluginKey)
 	if err != nil {
 		return request, err
-	}
-
-	if request.Context == nil {
-		request.Context = map[string]any{}
 	}
 	request.Context["settings"] = settings
 	return request, nil
@@ -233,7 +255,7 @@ func (s Service) loadSettings(ctx context.Context, pluginKey string) (map[string
 		return map[string]any{}, nil
 	}
 
-	raw, err := s.settingsStore.GetConfig(ctx, settingsKey(pluginKey))
+	raw, err := s.settingsStore.GetSettings(ctx, pluginKey)
 	if err != nil {
 		return nil, fmt.Errorf("get plugin settings %s: %w", pluginKey, err)
 	}
@@ -268,10 +290,6 @@ func (s Service) executionTimeoutForRequest(request plugindomain.ExecutionReques
 	}
 }
 
-func settingsKey(pluginKey string) string {
-	return "plugin_settings:" + pluginKey
-}
-
 func defaultExecutionTimeouts() ExecutionTimeouts {
 	return ExecutionTimeouts{
 		Account: 60 * time.Second,
@@ -291,6 +309,17 @@ func normalizeExecutionTimeouts(in ExecutionTimeouts) ExecutionTimeouts {
 		in.Agent = 0
 	}
 	return in
+}
+
+func normalizeInternalAPIConfig(in InternalAPIConfig) InternalAPIConfig {
+	out := InternalAPIConfig{
+		URL:   strings.TrimRight(strings.TrimSpace(in.URL), "/"),
+		Token: strings.TrimSpace(in.Token),
+	}
+	if in.TimeoutSeconds > 0 {
+		out.TimeoutSeconds = in.TimeoutSeconds
+	}
+	return out
 }
 
 func decodeExecutionEventLine(line []byte) (plugindomain.ExecutionEvent, bool) {

@@ -9,6 +9,8 @@ import (
 	"gorm.io/gorm"
 
 	plugindomain "octomanger/internal/domains/plugins/domain"
+	"octomanger/internal/platform/database"
+	platformlogging "octomanger/internal/platform/logging"
 )
 
 // pluginLister is the narrow interface systemapp needs from the plugin backend.
@@ -20,6 +22,17 @@ type Status struct {
 	Now         time.Time `json:"now"`
 	DatabaseOK  bool      `json:"database_ok"`
 	PluginCount int       `json:"plugin_count"`
+}
+
+type RuntimeLog struct {
+	ID        int64          `json:"id"`
+	Source    string         `json:"source"`
+	Level     string         `json:"level"`
+	Logger    string         `json:"logger"`
+	Caller    string         `json:"caller"`
+	Message   string         `json:"message"`
+	Fields    map[string]any `json:"fields"`
+	CreatedAt time.Time      `json:"created_at"`
 }
 
 // DashboardSummary is returned by GET /api/v2/dashboard and replaces 8 parallel
@@ -80,81 +93,139 @@ func (s Service) Status(ctx context.Context) (Status, error) {
 	return item, nil
 }
 
+func (s Service) ListLogs(ctx context.Context, limit int) ([]RuntimeLog, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	if s.rdb == nil {
+		return []RuntimeLog{}, nil
+	}
+
+	rawItems, err := s.rdb.LRange(ctx, platformlogging.SystemRuntimeLogsRedisKey, 0, int64(limit-1)).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]RuntimeLog, 0, len(rawItems))
+	for _, raw := range rawItems {
+		var record platformlogging.SystemRuntimeLogRecord
+		if err := json.Unmarshal([]byte(raw), &record); err != nil {
+			continue
+		}
+		items = append(items, RuntimeLog{
+			ID:        record.ID,
+			Source:    record.Source,
+			Level:     record.Level,
+			Logger:    record.Logger,
+			Caller:    record.Caller,
+			Message:   record.Message,
+			Fields:    record.Fields,
+			CreatedAt: record.CreatedAt,
+		})
+	}
+	return items, nil
+}
+
 // DashboardSummary returns entity counts and the 6 most recent executions in a
 // single DB round-trip (one query per table — all cheap COUNT/LIMIT queries).
 func (s Service) DashboardSummary(ctx context.Context) (DashboardSummary, error) {
 	if item, ok := s.readDashboardCache(ctx); ok {
 		return item, nil
 	}
-	type countRow struct{ N int64 }
-
-	countOf := func(table string) (int, error) {
-		var row countRow
-		if err := s.db.WithContext(ctx).Raw("SELECT COUNT(*) AS n FROM " + table).Scan(&row).Error; err != nil {
+	countOf := func(model any) (int, error) {
+		var count int64
+		if err := s.db.WithContext(ctx).Model(model).Count(&count).Error; err != nil {
 			return 0, err
 		}
-		return int(row.N), nil
+		return int(count), nil
 	}
 
 	pluginList, _ := s.plugins.List(ctx) // plugins live in-memory; no separate table
 
-	accountTypeCount, err := countOf("account_types")
+	accountTypeCount, err := countOf(&database.AccountTypeModel{})
 	if err != nil {
 		return DashboardSummary{}, err
 	}
 
-	accountCount, err := countOf("accounts")
+	accountCount, err := countOf(&database.AccountModel{})
 	if err != nil {
 		return DashboardSummary{}, err
 	}
 
-	emailAccountCount, err := countOf("email_accounts")
+	emailAccountCount, err := countOf(&database.EmailAccountModel{})
 	if err != nil {
 		return DashboardSummary{}, err
 	}
 
-	jobDefinitionCount, err := countOf("job_definitions")
+	jobDefinitionCount, err := countOf(&database.JobDefinitionModel{})
 	if err != nil {
 		return DashboardSummary{}, err
 	}
 
-	jobExecutionCount, err := countOf("job_executions")
+	jobExecutionCount, err := countOf(&database.JobExecutionModel{})
 	if err != nil {
 		return DashboardSummary{}, err
 	}
 
-	triggerCount, err := countOf("triggers")
+	triggerCount, err := countOf(&database.TriggerModel{})
 	if err != nil {
 		return DashboardSummary{}, err
 	}
 
-	agentCount, err := countOf("agents")
+	agentCount, err := countOf(&database.AgentModel{})
 	if err != nil {
 		return DashboardSummary{}, err
 	}
 
-	// Fetch the 6 most recent executions — a lightweight projection, not the full scan.
-	rows, err := s.db.WithContext(ctx).Raw(`
-		SELECT e.id, d.name, d.plugin_key, d.action, e.status, COALESCE(e.worker_id, '')
-		FROM job_executions e
-		JOIN job_definitions d ON d.id = e.job_definition_id
-		ORDER BY e.created_at DESC
-		LIMIT 6`).Rows()
-	if err != nil {
+	var executions []database.JobExecutionModel
+	if err := s.db.WithContext(ctx).
+		Order("created_at DESC").
+		Limit(6).
+		Find(&executions).Error; err != nil {
 		return DashboardSummary{}, err
 	}
-	defer rows.Close()
 
-	recent := make([]RecentExecution, 0, 6)
-	for rows.Next() {
-		var r RecentExecution
-		if err := rows.Scan(&r.ID, &r.DefinitionName, &r.PluginKey, &r.Action, &r.Status, &r.WorkerID); err != nil {
+	definitionIDs := make([]int64, 0, len(executions))
+	seenDefinitions := map[int64]struct{}{}
+	for _, execution := range executions {
+		if _, ok := seenDefinitions[execution.JobDefinitionID]; ok {
+			continue
+		}
+		seenDefinitions[execution.JobDefinitionID] = struct{}{}
+		definitionIDs = append(definitionIDs, execution.JobDefinitionID)
+	}
+
+	definitions := map[int64]database.JobDefinitionModel{}
+	if len(definitionIDs) > 0 {
+		var records []database.JobDefinitionModel
+		if err := s.db.WithContext(ctx).
+			Where("id IN ?", definitionIDs).
+			Find(&records).Error; err != nil {
 			return DashboardSummary{}, err
 		}
-		recent = append(recent, r)
+		for _, record := range records {
+			definitions[record.ID] = record
+		}
 	}
-	if err := rows.Err(); err != nil {
-		return DashboardSummary{}, err
+
+	recent := make([]RecentExecution, 0, len(executions))
+	for _, execution := range executions {
+		definition := definitions[execution.JobDefinitionID]
+		workerID := ""
+		if execution.WorkerID != nil {
+			workerID = *execution.WorkerID
+		}
+		recent = append(recent, RecentExecution{
+			ID:             execution.ID,
+			DefinitionName: definition.Name,
+			PluginKey:      definition.PluginKey,
+			Action:         definition.Action,
+			Status:         execution.Status,
+			WorkerID:       workerID,
+		})
 	}
 
 	item := DashboardSummary{

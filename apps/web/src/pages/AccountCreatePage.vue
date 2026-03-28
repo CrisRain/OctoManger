@@ -19,7 +19,6 @@ const manualFormRef = ref<InstanceType<typeof SmartForm>>();
 const formData = ref({
   account_type_id: "",
   identifier: "",
-  status: "active",
   tags: "",
 });
 const spec = ref<Record<string, string>>({});
@@ -111,17 +110,6 @@ const manualFormFields = computed<FieldConfig[]>(() => [
     required: true,
   },
   {
-    name: "status",
-    label: "状态",
-    type: "select",
-    required: true,
-    options: [
-      { label: "已激活", value: "active" },
-      { label: "待验证", value: "pending" },
-      { label: "已停用", value: "inactive" },
-    ],
-  },
-  {
     name: "tags",
     label: "标签",
     type: "text",
@@ -147,7 +135,7 @@ async function handleCreate() {
     await create.execute({
       account_type_id: Number(formData.value.account_type_id),
       identifier: formData.value.identifier.trim(),
-      status: formData.value.status,
+      status: "pending",
       tags: formData.value.tags.split(",").map((t) => t.trim()).filter(Boolean),
       spec: builtSpec,
     });
@@ -187,6 +175,9 @@ async function handleCreate() {
             v-model="formData"
             :fields="manualFormFields"
           />
+          <p class="mt-3 text-sm leading-6 text-slate-500">
+            账号创建后默认进入待验证状态，后续会根据验证结果自动更新。
+          </p>
 
           <ui-form v-if="specFields.length" layout="vertical" class="mt-4">
             <ui-divider orientation="left" class="my-4">

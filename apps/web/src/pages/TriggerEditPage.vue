@@ -9,10 +9,10 @@ import { useTriggers, usePatchTrigger } from "@/composables/useTriggers";
 import { useMessage, useErrorHandler } from "@/composables";
 import type { FieldConfig } from "@/components/smart-form.types";
 import { to } from "@/router/registry";
+import { formatJSONObject } from "@/shared/utils/json";
 import {
   formatJobDefinitionOptionLabel,
   parseTriggerDefaultInput,
-  stringifyTriggerDefaultInput,
 } from "@/utils/triggerForm";
 
 const route = useRoute();
@@ -42,7 +42,7 @@ watch(trigger, (t) => {
   formData.value.name = t.name;
   formData.value.job_definition_id = String(t.job_definition_id);
   formData.value.mode = t.mode;
-  formData.value.default_input_json = stringifyTriggerDefaultInput(t.default_input);
+  formData.value.default_input_json = formatJSONObject(t.default_input);
   formData.value.enabled = t.enabled;
 }, { immediate: true });
 

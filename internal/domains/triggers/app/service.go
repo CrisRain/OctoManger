@@ -29,6 +29,10 @@ func (s Service) List(ctx context.Context) ([]triggerdomain.Trigger, error) {
 	return s.repo.List(ctx)
 }
 
+func (s Service) ListPage(ctx context.Context, limit int, offset int) ([]triggerdomain.Trigger, int64, error) {
+	return s.repo.ListPage(ctx, limit, offset)
+}
+
 func (s Service) Get(ctx context.Context, triggerID int64) (*triggerdomain.Trigger, error) {
 	return s.repo.GetByID(ctx, triggerID)
 }
@@ -36,6 +40,9 @@ func (s Service) Get(ctx context.Context, triggerID int64) (*triggerdomain.Trigg
 func (s Service) Create(ctx context.Context, input triggerdomain.CreateInput) (*triggerdomain.CreateResult, error) {
 	if strings.TrimSpace(input.Mode) == "" {
 		input.Mode = "async"
+	}
+	if input.Mode != "sync" && input.Mode != "async" {
+		return nil, fmt.Errorf("invalid trigger mode %q: must be \"sync\" or \"async\"", input.Mode)
 	}
 
 	token, err := newToken()

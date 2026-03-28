@@ -15,17 +15,23 @@ services:
       interval: 10s
       timeout: 5s
       retries: 8
+    mem_limit: 512m
+    cpus: 1.0
 
   redis:
     image: redis:7-alpine
     container_name: octomanger-redis
     ports:
       - "6379:6379"
+    volumes:
+      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+    mem_limit: 256m
+    cpus: 0.5
 
   app:
     build:
@@ -43,20 +49,13 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:
-      test:
-        [
-          "CMD",
-          "python3",
-          "-c",
-          "import sys,urllib.request; sys.exit(0) if urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=2).status == 200 else sys.exit(1)",
-        ]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/healthz > /dev/null"]
       interval: 10s
       timeout: 3s
       retries: 6
       start_period: 15s
     environment:
       API_ADDR: ":8080"
-      WEB_DIST_DIR: "/app/web-dist"
       LOG_LEVEL: "info"
       PYTHON_BIN: "python3"
       PLUGINS_DIR: "/app/plugins/modules"
@@ -67,9 +66,12 @@ services:
       NO_PROXY: "${NO_PROXY:-}"
       DATABASE_DSN: "postgres://octo:octo@postgres:5432/octomanger?sslmode=disable"
       REDIS_ADDR: "redis:6379"
+      MIGRATION_MODE: "versioned"
     volumes:
       - ./plugins:/app/plugins
       - pip_cache:/root/.cache/pip
+    mem_limit: 1g
+    cpus: 2.0
 
 volumes:
   pgdata:

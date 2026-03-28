@@ -13,21 +13,17 @@ import (
 
 	agentdomain "octomanger/internal/domains/agents/domain"
 	agentpostgres "octomanger/internal/domains/agents/infra/postgres"
+	plugins "octomanger/internal/domains/plugins"
 	plugindomain "octomanger/internal/domains/plugins/domain"
 	"octomanger/internal/platform/logbatch"
 )
-
-// pluginExecutor is the narrow interface agentapp needs from the plugin backend.
-type pluginExecutor interface {
-	Execute(ctx context.Context, pluginKey string, request plugindomain.ExecutionRequest, onEvent func(plugindomain.ExecutionEvent)) error
-}
 
 const statusCacheTTL = 5 * time.Second
 
 type Service struct {
 	logger            *zap.Logger
 	repo              agentpostgres.Repository
-	plugins           pluginExecutor
+	plugins           plugins.PluginService
 	rdb               *redis.Client // nil = cache disabled
 	workerID          string
 	loopInterval      time.Duration
@@ -39,7 +35,7 @@ type Service struct {
 func New(
 	logger *zap.Logger,
 	repo agentpostgres.Repository,
-	plugins pluginExecutor,
+	plugins plugins.PluginService,
 	rdb *redis.Client,
 	workerID string,
 	loopInterval time.Duration,
@@ -102,6 +98,10 @@ func (s *Service) List(ctx context.Context) ([]agentdomain.Agent, error) {
 	return s.repo.List(ctx)
 }
 
+func (s *Service) ListPage(ctx context.Context, limit int, offset int) ([]agentdomain.Agent, int64, error) {
+	return s.repo.ListPage(ctx, limit, offset)
+}
+
 func (s *Service) Create(ctx context.Context, input agentdomain.CreateAgentInput) (*agentdomain.Agent, error) {
 	return s.repo.Create(ctx, input)
 }
@@ -111,7 +111,7 @@ func (s *Service) Patch(ctx context.Context, agentID int64, input agentdomain.Pa
 }
 
 func (s *Service) Start(ctx context.Context, agentID int64) error {
-	if err := s.repo.SetDesiredState(ctx, agentID, "running"); err != nil {
+	if err := s.repo.SetDesiredState(ctx, agentID, agentdomain.DesiredStateRunning); err != nil {
 		return err
 	}
 	s.invalidateStatusCache(ctx, agentID)
@@ -119,7 +119,7 @@ func (s *Service) Start(ctx context.Context, agentID int64) error {
 }
 
 func (s *Service) Stop(ctx context.Context, agentID int64) error {
-	if err := s.repo.SetDesiredState(ctx, agentID, "stopped"); err != nil {
+	if err := s.repo.SetDesiredState(ctx, agentID, agentdomain.DesiredStateStopped); err != nil {
 		return err
 	}
 	s.invalidateStatusCache(ctx, agentID)
@@ -188,6 +188,11 @@ func (s *Service) RunSupervisor(ctx context.Context, scanInterval time.Duration)
 	}
 }
 
+type agentLaunch struct {
+	item agentdomain.Agent
+	ctx  context.Context
+}
+
 func (s *Service) syncAgents(ctx context.Context) error {
 	items, err := s.repo.ListDesiredRunning(ctx)
 	if err != nil {
@@ -198,6 +203,11 @@ func (s *Service) syncAgents(ctx context.Context) error {
 	for _, item := range items {
 		desired[item.ID] = item
 	}
+
+	// Collect agents to launch before releasing the lock so goroutines are
+	// never started while the mutex is held (which risks a deadlock because
+	// runAgentLoop's defer also acquires the mutex).
+	var launches []agentLaunch
 
 	s.mu.Lock()
 	for id, cancel := range s.activeAgentCancel {
@@ -213,16 +223,20 @@ func (s *Service) syncAgents(ctx context.Context) error {
 		}
 		agentCtx, cancel := context.WithCancel(ctx)
 		s.activeAgentCancel[item.ID] = cancel
-		go s.runAgentLoop(agentCtx, item)
+		launches = append(launches, agentLaunch{item: item, ctx: agentCtx})
 	}
 	s.mu.Unlock()
+
+	for _, l := range launches {
+		go s.runAgentLoop(l.ctx, l.item)
+	}
 
 	return nil
 }
 
 func (s *Service) runAgentLoop(ctx context.Context, agent agentdomain.Agent) {
 	defer func() {
-		_ = s.updateRuntimeState(context.Background(), agent.ID, "stopped", "", nil)
+		_ = s.updateRuntimeState(context.Background(), agent.ID, agentdomain.RuntimeStateStopped, "", nil)
 
 		s.mu.Lock()
 		delete(s.activeAgentCancel, agent.ID)
@@ -231,7 +245,7 @@ func (s *Service) runAgentLoop(ctx context.Context, agent agentdomain.Agent) {
 
 	for {
 		heartbeat := time.Now().UTC()
-		if err := s.updateRuntimeState(ctx, agent.ID, "running", "", &heartbeat); err != nil {
+		if err := s.updateRuntimeState(ctx, agent.ID, agentdomain.RuntimeStateRunning, "", &heartbeat); err != nil {
 			s.logger.Sugar().Errorw("update agent runtime state failed", "agent_id", agent.ID, "error", err)
 		}
 
@@ -279,7 +293,7 @@ func (s *Service) runAgentLoop(ctx context.Context, agent agentdomain.Agent) {
 		heartbeat = time.Now().UTC()
 		if runErr != nil {
 			_ = s.repo.AppendLog(ctx, agent.ID, "error", runErr.Error(), nil)
-			_ = s.updateRuntimeState(ctx, agent.ID, "error", runErr.Error(), &heartbeat)
+			_ = s.updateRuntimeState(ctx, agent.ID, agentdomain.RuntimeStateError, runErr.Error(), &heartbeat)
 			backoffTimer := time.NewTimer(s.errorBackoff)
 			select {
 			case <-ctx.Done():
@@ -290,7 +304,7 @@ func (s *Service) runAgentLoop(ctx context.Context, agent agentdomain.Agent) {
 			}
 		}
 
-		_ = s.updateRuntimeState(ctx, agent.ID, "idle", "", &heartbeat)
+		_ = s.updateRuntimeState(ctx, agent.ID, agentdomain.RuntimeStateIdle, "", &heartbeat)
 
 		loopTimer := time.NewTimer(s.loopInterval)
 		select {

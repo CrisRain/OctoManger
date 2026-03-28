@@ -1,19 +1,19 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
-import { getConfig, setConfig } from "@/api";
-import type { SetConfigRequestBody, SystemConfigValue } from "@/types";
+import { getSystemConfig, updateSystemConfig } from "@/api";
+import type { SystemConfig } from "@/types";
 
 export const useConfigStore = defineStore("config", () => {
-  const configs = ref<Record<string, unknown>>({});
+  const config = ref<SystemConfig | null>(null);
   const loading = ref(false);
   const error = ref<string | null>(null);
 
-  async function fetchConfig(key: string): Promise<SystemConfigValue | null> {
+  async function fetchConfig(): Promise<SystemConfig | null> {
     loading.value = true;
     error.value = null;
     try {
-      const result = await getConfig(key);
-      configs.value = { ...configs.value, [key]: result.value };
+      const result = await getSystemConfig();
+      config.value = result;
       return result;
     } catch (e) {
       error.value = e instanceof Error ? e.message : "请求失败";
@@ -23,15 +23,12 @@ export const useConfigStore = defineStore("config", () => {
     }
   }
 
-  async function updateConfig(
-    key: string,
-    value: SetConfigRequestBody["value"],
-  ): Promise<SystemConfigValue | null> {
+  async function saveConfig(value: SystemConfig): Promise<SystemConfig | null> {
     loading.value = true;
     error.value = null;
     try {
-      const result = await setConfig(key, value);
-      configs.value = { ...configs.value, [key]: result.value };
+      const result = await updateSystemConfig(value);
+      config.value = result;
       return result;
     } catch (e) {
       error.value = e instanceof Error ? e.message : "请求失败";
@@ -42,10 +39,10 @@ export const useConfigStore = defineStore("config", () => {
   }
 
   return {
-    configs,
+    config,
     loading,
     error,
     fetchConfig,
-    updateConfig,
+    saveConfig,
   };
 });

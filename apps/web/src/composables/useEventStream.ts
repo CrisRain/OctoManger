@@ -1,4 +1,5 @@
 import { ref, watch, onUnmounted, type Ref } from "vue";
+import { getAdminKey } from "@/lib/auth";
 
 export type EventStreamStatus = "idle" | "connecting" | "open" | "closed" | "error";
 
@@ -44,7 +45,11 @@ export function useEventStream(
     const heartbeatSet = new Set(options.heartbeatEvents ?? ["heartbeat"]);
 
     try {
-      const response = await fetch(streamUrl, { signal: ac.signal });
+      const adminKey = getAdminKey();
+      const response = await fetch(streamUrl, {
+        signal: ac.signal,
+        headers: adminKey ? { "X-Admin-Key": adminKey } : undefined,
+      });
 
       if (!response.ok || !response.body) {
         status.value = "error";
@@ -57,53 +62,74 @@ export function useEventStream(
       const decoder = new TextDecoder();
       let buffer = "";
 
+      const processLine = (line: string): boolean => {
+        const trimmed = line.trim();
+        if (!trimmed) return false;
+
+        let event = "";
+        let raw = trimmed;
+
+        try {
+          const parsed = JSON.parse(trimmed) as { event?: string; data?: unknown };
+          event = parsed.event ?? "";
+          raw = JSON.stringify(parsed.data ?? parsed);
+        } catch {
+          // Not valid JSON — treat the whole line as raw data.
+        }
+
+        const isHeartbeat = heartbeatSet.has(event);
+        if (isHeartbeat) {
+          lastHeartbeatAt.value = Date.now();
+          try {
+            heartbeatPayload.value = JSON.parse(raw);
+          } catch {
+            heartbeatPayload.value = raw;
+          }
+          if (!options.includeHeartbeatInLines) return false;
+        }
+
+        lines.value = [...lines.value, raw].slice(-MAX_LOG_LINES);
+
+        if (closeOnSet.has(event)) {
+          status.value = "closed";
+          return true; // signal caller to close
+        }
+        return false;
+      };
+
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
 
-        buffer += decoder.decode(value, { stream: true });
+        if (!done) {
+          buffer += decoder.decode(value, { stream: true });
+        }
 
-        // Split on newlines; keep the last incomplete chunk in the buffer.
-        const newline = buffer.lastIndexOf("\n");
-        if (newline === -1) continue;
+        // On the final chunk, flush the entire buffer; otherwise only process
+        // complete lines (up to the last newline).
+        let complete: string;
+        if (done) {
+          complete = buffer;
+          buffer = "";
+        } else {
+          const newline = buffer.lastIndexOf("\n");
+          if (newline === -1) continue;
+          complete = buffer.slice(0, newline);
+          buffer = buffer.slice(newline + 1);
+        }
 
-        const complete = buffer.slice(0, newline);
-        buffer = buffer.slice(newline + 1);
-
+        let shouldClose = false;
         for (const line of complete.split("\n")) {
-          const trimmed = line.trim();
-          if (!trimmed) continue;
-
-          let event = "";
-          let raw = trimmed;
-
-          try {
-            const parsed = JSON.parse(trimmed) as { event?: string; data?: unknown };
-            event = parsed.event ?? "";
-            raw = JSON.stringify(parsed.data ?? parsed);
-          } catch {
-            // Not valid JSON — treat the whole line as raw data.
-          }
-
-          const isHeartbeat = heartbeatSet.has(event);
-          if (isHeartbeat) {
-            lastHeartbeatAt.value = Date.now();
-            try {
-              heartbeatPayload.value = JSON.parse(raw);
-            } catch {
-              heartbeatPayload.value = raw;
-            }
-            if (!options.includeHeartbeatInLines) continue;
-          }
-
-          lines.value = [...lines.value, raw].slice(-MAX_LOG_LINES);
-
-          if (closeOnSet.has(event)) {
-            status.value = "closed";
-            reader.cancel();
-            return;
+          if (processLine(line)) {
+            shouldClose = true;
+            break;
           }
         }
+        if (shouldClose) {
+          reader.cancel();
+          return;
+        }
+
+        if (done) break;
       }
 
       // Stream ended normally.

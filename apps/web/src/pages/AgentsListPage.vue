@@ -128,6 +128,40 @@ async function handleDeleteAgent(agent: Agent) {
   );
 }
 
+// 批量启动
+async function handleBatchStart(items: Agent[]) {
+  if (!items.length) return;
+  const targets = items.filter(item => item.runtime_state !== 'running');
+  if (!targets.length) { message.warning("选中的 Agent 均已在运行中"); return; }
+
+  await withErrorHandler(
+    async () => {
+      await Promise.all(targets.map((item) => startAgent.execute(item.id)));
+      message.success(`已发送启动指令 (${targets.length} 个)`);
+      await refresh();
+    },
+    { action: "批量启动", showSuccess: false }
+  );
+}
+
+// 批量停止
+async function handleBatchStop(items: Agent[]) {
+  if (!items.length) return;
+  const targets = items.filter(item => item.runtime_state === 'running');
+  if (!targets.length) { message.warning("选中的 Agent 均未在运行中"); return; }
+  const confirmed = await confirm.confirm(`确定要停止选中的 ${targets.length} 个运行中 Agent 吗？`);
+  if (!confirmed) return;
+
+  await withErrorHandler(
+    async () => {
+      await Promise.all(targets.map((item) => stopAgent.execute(item.id)));
+      message.success(`已发送停止指令 (${targets.length} 个)`);
+      await refresh();
+    },
+    { action: "批量停止", showSuccess: false }
+  );
+}
+
 // 批量删除
 async function handleBatchDelete(items: Agent[]) {
   if (!items.length) return;
@@ -189,6 +223,37 @@ async function handleBatchExport(items: Agent[]) {
       @batch-delete="handleBatchDelete"
       @batch-export="handleBatchExport"
     >
+      <template #batch-actions="{ selectedItems }">
+        <button type="button"
+          aria-label="批量启动"
+          title="批量启动"
+          class="relative inline-flex h-7 cursor-pointer items-center gap-1 rounded-lg px-2 text-xs font-medium text-emerald-600 transition-all hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/50"
+          @click="handleBatchStart(selectedItems)"
+        >
+          <icon-play-arrow class="h-3.5 w-3.5" aria-hidden="true" />
+          启动
+        </button>
+        <button type="button"
+          aria-label="批量停止"
+          title="批量停止"
+          class="relative inline-flex h-7 cursor-pointer items-center gap-1 rounded-lg px-2 text-xs font-medium text-red-500 transition-all hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/50"
+          @click="handleBatchStop(selectedItems)"
+        >
+          <icon-stop class="h-3.5 w-3.5" aria-hidden="true" />
+          停止
+        </button>
+        <div class="h-4 w-px bg-slate-200 mx-0.5" aria-hidden="true" />
+      </template>
+      <template #mobile-batch-actions="{ selectedItems }">
+        <button type="button"
+          class="cursor-pointer rounded-lg border-0 bg-emerald-500 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-emerald-600"
+          @click="handleBatchStart(selectedItems)"
+        >启动</button>
+        <button type="button"
+          class="cursor-pointer rounded-lg border-0 bg-white/20 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-white/30"
+          @click="handleBatchStop(selectedItems)"
+        >停止</button>
+      </template>
       <template #filters>
         <!-- 状态筛选 -->
         <div class="flex flex-wrap items-center gap-2">

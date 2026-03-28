@@ -213,6 +213,7 @@ func (m *Manager) prepareVirtualEnv(ctx context.Context, process ProcessConfig, 
 			"-m",
 			"pip",
 			"install",
+			"--quiet",
 			"--disable-pip-version-check",
 			"-r",
 			requirementsPath,
@@ -270,7 +271,15 @@ func streamProcessLogs(ctx context.Context, logger *zap.Logger, reader io.Reader
 		if line == "" {
 			continue
 		}
+		if isLowValueDependencyLogLine(line) {
+			logger.Debug("plugin dependency output", zap.String("line", line))
+			continue
+		}
 		if isErr {
+			if isInformationalPluginStderr(line) {
+				logger.Info("plugin stderr", zap.String("line", line))
+				continue
+			}
 			logger.Warn("plugin stderr", zap.String("line", line))
 			continue
 		}
@@ -279,6 +288,39 @@ func streamProcessLogs(ctx context.Context, logger *zap.Logger, reader io.Reader
 	if err := scanner.Err(); err != nil && ctx.Err() == nil {
 		logger.Warn("read plugin process output failed", zap.Error(err))
 	}
+}
+
+func isLowValueDependencyLogLine(line string) bool {
+	lower := strings.ToLower(strings.TrimSpace(line))
+	if lower == "" {
+		return false
+	}
+	prefixes := []string{
+		"requirement already satisfied:",
+		"collecting ",
+		"using cached ",
+		"downloading ",
+		"installing collected packages",
+		"successfully installed ",
+	}
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(lower, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func isInformationalPluginStderr(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return false
+	}
+	if strings.HasPrefix(trimmed, "[") && strings.Contains(trimmed, "]") {
+		return true
+	}
+	lower := strings.ToLower(trimmed)
+	return strings.HasPrefix(lower, "info:") || strings.Contains(lower, "listening")
 }
 
 func resolvePluginDirectory(modulesDir, key string) string {

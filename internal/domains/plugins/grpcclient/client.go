@@ -9,15 +9,20 @@ package grpcclient
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
+	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
 
@@ -33,12 +38,23 @@ type Client struct {
 	registry      PluginRegistry
 	settingsStore pluginapp.SettingsStore // may be nil
 	timeouts      pluginapp.ExecutionTimeouts
+	internalAPI   pluginapp.InternalAPIConfig
+	security      TransportSecurityConfig
 
 	mu    sync.RWMutex
 	conns map[string]*grpc.ClientConn // normalised key → live connection
 }
 
 const metadataRPCTimeout = 2 * time.Second
+
+type TransportSecurityConfig struct {
+	// AllowInsecureRemote permits plaintext for non-loopback plugin endpoints.
+	// When false, non-loopback addresses are dialed with TLS.
+	AllowInsecureRemote bool
+	// InsecureSkipVerify disables certificate verification for TLS dials.
+	// Use only with private/self-signed certificates.
+	InsecureSkipVerify bool
+}
 
 // New creates a Client. Call WithSettingsStore and WithExecutionTimeouts to
 // configure optional behaviour before the first Execute call.
@@ -60,6 +76,16 @@ func (c *Client) WithSettingsStore(store pluginapp.SettingsStore) *Client {
 // WithExecutionTimeouts overrides the per-mode execution timeouts.
 func (c *Client) WithExecutionTimeouts(t pluginapp.ExecutionTimeouts) *Client {
 	c.timeouts = t
+	return c
+}
+
+func (c *Client) WithTransportSecurity(cfg TransportSecurityConfig) *Client {
+	c.security = cfg
+	return c
+}
+
+func (c *Client) WithInternalAPI(config pluginapp.InternalAPIConfig) *Client {
+	c.internalAPI = config
 	return c
 }
 
@@ -123,7 +149,7 @@ func (c *Client) Execute(
 				if onEvent != nil {
 					onEvent(plugindomain.ExecutionEvent{Type: "error", Message: msg, Error: "TIMEOUT"})
 				}
-				return fmt.Errorf("%s", msg)
+				return fmt.Errorf("plugin execution timed out after %s: %w", timeout, execCtx.Err())
 			}
 			if receivedError {
 				// Plugin already communicated the failure via an error event.
@@ -280,14 +306,19 @@ func (c *Client) conn(pluginKey string) (*grpc.ClientConn, error) {
 		return conn, nil
 	}
 
-	addr, err := c.registry.Address(pluginKey)
+	serviceConfig, err := c.registry.ServiceConfig(pluginKey)
+	if err != nil {
+		return nil, err
+	}
+	addr := serviceConfig.Address
+	transportCreds, err := resolveTransportCredentials(serviceConfig, c.security)
 	if err != nil {
 		return nil, err
 	}
 
 	newConn, err := grpc.NewClient(
 		addr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithTransportCredentials(transportCreds),
 		// Force JSON codec so plugin services don't need grpcio-tools to
 		// generate binary protobuf stubs. Both sides use plain JSON payloads.
 		grpc.WithDefaultCallOptions(grpc.ForceCodec(grpccodec.Codec())),
@@ -308,15 +339,129 @@ func (c *Client) conn(pluginKey string) (*grpc.ClientConn, error) {
 	return newConn, nil
 }
 
+func resolveTransportCredentials(
+	service PluginServiceConfig,
+	security TransportSecurityConfig,
+) (credentials.TransportCredentials, error) {
+	if shouldUseInsecureTransport(service, security) {
+		return insecure.NewCredentials(), nil
+	}
+
+	tlsConfig := &tls.Config{
+		MinVersion:         tls.VersionTLS12,
+		InsecureSkipVerify: service.TLSInsecureSkipVerify || security.InsecureSkipVerify,
+	}
+	if serverName := strings.TrimSpace(service.TLSServerName); serverName != "" {
+		tlsConfig.ServerName = serverName
+	} else if host := hostFromAddress(service.Address); host != "" && net.ParseIP(host) == nil {
+		tlsConfig.ServerName = host
+	}
+
+	return credentials.NewTLS(tlsConfig), nil
+}
+
+func shouldUseInsecureTransport(service PluginServiceConfig, security TransportSecurityConfig) bool {
+	if service.AllowInsecure {
+		return true
+	}
+
+	host := hostFromAddress(service.Address)
+	if isLoopbackHost(host) {
+		return true
+	}
+	if security.AllowInsecureRemote {
+		return true
+	}
+	return false
+}
+
+func hostFromAddress(addr string) string {
+	trimmed := strings.TrimSpace(addr)
+	if trimmed == "" {
+		return ""
+	}
+
+	if strings.HasPrefix(trimmed, "unix://") || strings.HasPrefix(trimmed, "unix:") {
+		return "localhost"
+	}
+
+	if strings.Contains(trimmed, "://") {
+		if parsed, err := url.Parse(trimmed); err == nil {
+			if host := strings.TrimSpace(parsed.Host); host != "" {
+				return normalizeHost(host)
+			}
+			path := strings.Trim(strings.TrimSpace(parsed.Path), "/")
+			if path != "" {
+				return normalizeHost(path)
+			}
+		}
+	}
+
+	return normalizeHost(trimmed)
+}
+
+func normalizeHost(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+
+	host, _, err := net.SplitHostPort(value)
+	if err == nil {
+		return strings.Trim(host, "[]")
+	}
+
+	trimmed := strings.Trim(value, "[]")
+	if ip := net.ParseIP(trimmed); ip != nil {
+		return trimmed
+	}
+
+	if idx := strings.LastIndex(value, ":"); idx > 0 {
+		candidateHost := value[:idx]
+		candidatePort := value[idx+1:]
+		if port, portErr := strconv.Atoi(candidatePort); portErr == nil && port > 0 && port <= 65535 {
+			return strings.Trim(candidateHost, "[]")
+		}
+	}
+
+	return trimmed
+}
+
+func isLoopbackHost(host string) bool {
+	host = strings.TrimSpace(strings.Trim(host, "[]"))
+	if host == "" {
+		return false
+	}
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
 func (c *Client) injectSettings(
 	ctx context.Context,
 	pluginKey string,
 	request plugindomain.ExecutionRequest,
 ) (plugindomain.ExecutionRequest, error) {
+	if request.Context == nil {
+		request.Context = map[string]any{}
+	}
+	request.Context["plugin_key"] = strings.TrimSpace(pluginKey)
+	if c.internalAPI.URL != "" {
+		request.Context["api_url"] = c.internalAPI.URL
+	}
+	if c.internalAPI.Token != "" {
+		request.Context["api_token"] = c.internalAPI.Token
+	}
+	if c.internalAPI.TimeoutSeconds > 0 {
+		request.Context["api_timeout_seconds"] = c.internalAPI.TimeoutSeconds
+	}
+
 	if c.settingsStore == nil {
 		return request, nil
 	}
-	raw, err := c.settingsStore.GetConfig(ctx, settingsKey(pluginKey))
+	raw, err := c.settingsStore.GetSettings(ctx, pluginKey)
 	if err != nil {
 		return request, fmt.Errorf("grpcclient: load settings for %q: %w", pluginKey, err)
 	}
@@ -325,9 +470,6 @@ func (c *Client) injectSettings(
 		if err := json.Unmarshal(raw, &settings); err != nil {
 			return request, fmt.Errorf("grpcclient: decode settings for %q: %w", pluginKey, err)
 		}
-	}
-	if request.Context == nil {
-		request.Context = map[string]any{}
 	}
 	request.Context["settings"] = settings
 	return request, nil
@@ -367,10 +509,6 @@ func protoToEvent(ev *pluginv1.ExecuteEvent) plugindomain.ExecutionEvent {
 		event.Message = event.Error
 	}
 	return event
-}
-
-func settingsKey(pluginKey string) string {
-	return "plugin_settings:" + pluginKey
 }
 
 func defaultTimeouts() pluginapp.ExecutionTimeouts {

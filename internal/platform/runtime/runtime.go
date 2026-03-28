@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"database/sql"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -35,6 +36,7 @@ type App struct {
 	Jobs         jobapp.Service
 	Agents       *agentapp.Service
 	System       systemapp.Service
+	flushLogs    func()
 }
 
 // Close releases DB and Redis connections.
@@ -42,31 +44,66 @@ func (a *App) Close() {
 	if grpcPlugins, ok := a.Plugins.(*grpcclient.Client); ok && grpcPlugins != nil {
 		grpcPlugins.Close()
 	}
+	if a.flushLogs != nil {
+		a.flushLogs()
+	}
 	if sqlDB, err := a.DB.DB(); err == nil {
-		if err := sqlDB.Close(); err != nil {
+		if err := closeSQLDB(sqlDB); err != nil {
 			a.Logger.Error("close db connection", zap.Error(err))
 		}
 	}
 	if a.Redis != nil {
-		if err := a.Redis.Close(); err != nil {
+		if err := closeRedis(a.Redis); err != nil {
 			a.Logger.Error("close redis connection", zap.Error(err))
 		}
 	}
 	_ = a.Logger.Sync()
 }
 
+var closeSQLDB = func(db *sql.DB) error {
+	return db.Close()
+}
+
+var closeRedis = func(rdb *redis.Client) error {
+	return rdb.Close()
+}
+
 func Bootstrap(ctx context.Context) (*App, error) {
-	resources, err := bootstrapPlatform(ctx)
+	return bootstrapWith(ctx, bootstrapDepsProvider())
+}
+
+var bootstrapDepsProvider = defaultBootstrapDeps
+
+type bootstrapDeps struct {
+	bootstrapPlatform func(context.Context) (*platformResources, error)
+	bootstrapPlugins  func(context.Context, *platformResources) (plugins.PluginService, error)
+	bootstrapDomains  func(*platformResources, plugins.PluginService) *domainServices
+	enforceRetention  func(context.Context, *App)
+	syncAccountTypes  func(context.Context, *App)
+}
+
+func defaultBootstrapDeps() bootstrapDeps {
+	return bootstrapDeps{
+		bootstrapPlatform: bootstrapPlatform,
+		bootstrapPlugins:  bootstrapPluginService,
+		bootstrapDomains:  bootstrapDomainServices,
+		enforceRetention:  enforceLogRetentionOnStartup,
+		syncAccountTypes:  syncPluginAccountTypesOnStartup,
+	}
+}
+
+func bootstrapWith(ctx context.Context, deps bootstrapDeps) (*App, error) {
+	resources, err := deps.bootstrapPlatform(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	pluginSvc, err := bootstrapPluginService(ctx, resources)
+	pluginSvc, err := deps.bootstrapPlugins(ctx, resources)
 	if err != nil {
 		return nil, err
 	}
 
-	services := bootstrapDomainServices(resources, pluginSvc)
+	services := deps.bootstrapDomains(resources, pluginSvc)
 
 	app := &App{
 		Config:       *resources.cfg,
@@ -81,10 +118,11 @@ func Bootstrap(ctx context.Context) (*App, error) {
 		Jobs:         services.jobs,
 		Agents:       services.agents,
 		System:       services.system,
+		flushLogs:    resources.flushLogs,
 	}
 
-	enforceLogRetentionOnStartup(ctx, app)
-	syncPluginAccountTypesOnStartup(ctx, app)
+	deps.enforceRetention(ctx, app)
+	deps.syncAccountTypes(ctx, app)
 
 	return app, nil
 }
@@ -107,7 +145,12 @@ func (a *App) SyncPluginAccountTypes(ctx context.Context) error {
 func toGRPCServiceMap(src map[string]config.PluginServiceEntry) map[string]grpcclient.PluginServiceConfig {
 	dst := make(map[string]grpcclient.PluginServiceConfig, len(src))
 	for k, v := range src {
-		dst[k] = grpcclient.PluginServiceConfig{Address: v.Address}
+		dst[k] = grpcclient.PluginServiceConfig{
+			Address:               v.Address,
+			AllowInsecure:         v.AllowInsecure,
+			TLSServerName:         v.TLSServerName,
+			TLSInsecureSkipVerify: v.TLSInsecureSkipVerify,
+		}
 	}
 	return dst
 }

@@ -21,7 +21,6 @@ const formRef = ref<InstanceType<typeof SmartForm>>();
 const formData = ref({
   address: "",
   provider: "outlook",
-  status: "active",
   // Outlook 配置
   tenant: "common",
   redirect_uri: "http://localhost:5173/oauth/callback",
@@ -49,17 +48,6 @@ const formFields: FieldConfig[] = [
       { label: "IMAP", value: "imap" },
     ],
     description: "邮箱服务提供商",
-  },
-  {
-    name: "status",
-    label: "状态",
-    type: "select",
-    defaultValue: "active",
-    options: [
-      { label: "已激活", value: "active" },
-      { label: "待验证", value: "pending" },
-      { label: "已停用", value: "inactive" },
-    ],
   },
   {
     name: "tenant",
@@ -97,7 +85,7 @@ async function handleSubmit() {
       await create.execute({
         address: formData.value.address.trim(),
         provider: formData.value.provider,
-        status: formData.value.status,
+        status: "pending",
         config: {
           tenant: formData.value.tenant,
           redirect_uri: formData.value.redirect_uri,
@@ -152,6 +140,9 @@ function handleCancel() {
             v-model="formData"
             :fields="formFields"
           />
+          <p class="mt-3 text-sm leading-6 text-slate-500">
+            邮箱账号创建后默认进入待验证状态，完成 OAuth 授权并验证成功后会自动激活。
+          </p>
         </ui-card>
       </template>
 
@@ -194,10 +185,9 @@ function handleCancel() {
               <h4 class="mb-3 text-sm font-semibold text-slate-900">配置步骤</h4>
               <ol class="pl-5 text-sm leading-7 text-slate-600 list-decimal">
                 <li>填写邮箱地址和选择服务商</li>
-                <li>设置初始状态（通常为"待验证"）</li>
                 <li>配置 OAuth 回调地址</li>
                 <li>保存后进行 OAuth 授权</li>
-                <li>授权完成后状态自动更新为"已激活"</li>
+                <li>授权完成并验证通过后状态自动更新为"已激活"</li>
               </ol>
             </div>
 

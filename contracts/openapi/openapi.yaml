@@ -28,6 +28,47 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SystemStatus"
+  /api/v2/setup/status:
+    get:
+      operationId: getSetupStatus
+      responses:
+        "200":
+          description: Setup status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SetupStatus"
+  /api/v2/setup/initialize:
+    post:
+      operationId: initializeSetup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SystemConfig"
+      responses:
+        "201":
+          description: Setup initialized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SetupInitializeResult"
+  /api/v2/system/logs:
+    get:
+      operationId: getSystemLogs
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: System runtime logs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemLogListResponse"
   /api/v2/dashboard:
     get:
       operationId: getDashboardSummary
@@ -38,47 +79,31 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DashboardSummary"
-  /api/v2/config/{key}:
+  /api/v2/config:
     get:
       operationId: getConfig
-      parameters:
-        - name: key
-          in: path
-          required: true
-          schema:
-            type: string
       responses:
         "200":
-          description: System configuration value
+          description: System configuration
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SystemConfigValue"
+                $ref: "#/components/schemas/SystemConfig"
     put:
-      operationId: setConfig
-      parameters:
-        - name: key
-          in: path
-          required: true
-          schema:
-            type: string
+      operationId: putConfig
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              required:
-                - value
-              properties:
-                value: {}
+              $ref: "#/components/schemas/SystemConfig"
       responses:
         "200":
-          description: Updated configuration value
+          description: Updated system configuration
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SystemConfigValue"
+                $ref: "#/components/schemas/SystemConfig"
   /api/v2/plugins:
     get:
       operationId: listPlugins
@@ -120,6 +145,32 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PluginSyncResult"
+  /api/v2/plugins/{key}/actions/{action}:
+    post:
+      operationId: executePluginAction
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: action
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExecutePluginActionInput"
+      responses:
+        "200":
+          description: Plugin action execution result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutePluginActionResult"
   /api/v2/plugins/{key}/settings:
     get:
       operationId: getPluginSettings
@@ -158,6 +209,43 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PluginSettingsSaveResult"
+  /api/v2/plugins/{key}/runtime-config:
+    get:
+      operationId: getPluginRuntimeConfig
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Plugin runtime config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PluginRuntimeConfig"
+    put:
+      operationId: putPluginRuntimeConfig
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PluginRuntimeConfigInput"
+      responses:
+        "200":
+          description: Updated plugin runtime config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PluginRuntimeConfig"
   /api/v2/job-definitions:
     get:
       operationId: listJobDefinitions
@@ -993,15 +1081,19 @@ paths:
                 $ref: "#/components/schemas/TriggerFireResult"
 components:
   schemas:
-    SystemConfigValue:
+    SystemConfig:
       type: object
       required:
-        - key
-        - value
+        - app_name
+        - job_default_timeout_minutes
+        - job_max_concurrency
       properties:
-        key:
+        app_name:
           type: string
-        value: {}
+        job_default_timeout_minutes:
+          type: integer
+        job_max_concurrency:
+          type: integer
     SystemStatus:
       type: object
       required:
@@ -1016,6 +1108,60 @@ components:
           type: boolean
         plugin_count:
           type: integer
+    SetupStatus:
+      type: object
+      required:
+        - needs_setup
+      properties:
+        needs_setup:
+          type: boolean
+    SetupInitializeResult:
+      type: object
+      required:
+        - api_key
+        - config
+      properties:
+        api_key:
+          type: string
+        config:
+          $ref: "#/components/schemas/SystemConfig"
+    SystemLogEntry:
+      type: object
+      required:
+        - id
+        - source
+        - level
+        - logger
+        - caller
+        - message
+        - fields
+        - created_at
+      properties:
+        id:
+          type: integer
+        source:
+          type: string
+        level:
+          type: string
+        logger:
+          type: string
+        caller:
+          type: string
+        message:
+          type: string
+        fields:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+    SystemLogListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SystemLogEntry"
     RecentExecution:
       type: object
       required:
@@ -1103,6 +1249,18 @@ components:
         description:
           type: string
         placeholder:
+          type: string
+        rows:
+          type: integer
+        min:
+          type: number
+        max:
+          type: number
+        step:
+          type: number
+        account_type_key:
+          type: string
+        bind:
           type: string
         choices:
           type: array
@@ -1249,6 +1407,30 @@ components:
           type: string
         healthy:
           type: boolean
+    ExecutePluginActionInput:
+      type: object
+      properties:
+        params:
+          type: object
+          additionalProperties: true
+        spec:
+          type: object
+          additionalProperties: true
+        account:
+          type: object
+          properties:
+            id:
+              type: integer
+            identifier:
+              type: string
+    ExecutePluginActionResult:
+      type: object
+      properties:
+        message:
+          type: string
+        data:
+          type: object
+          additionalProperties: true
     PluginSyncResult:
       type: object
       required:
@@ -1271,6 +1453,23 @@ components:
       properties:
         saved:
           type: boolean
+    PluginRuntimeConfig:
+      type: object
+      required:
+        - plugin_key
+        - grpc_address
+      properties:
+        plugin_key:
+          type: string
+        grpc_address:
+          type: string
+    PluginRuntimeConfigInput:
+      type: object
+      required:
+        - grpc_address
+      properties:
+        grpc_address:
+          type: string
     Schedule:
       type: object
       required:
@@ -1360,6 +1559,12 @@ components:
           type: string
         error_message:
           type: string
+        started_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
     ScheduleInput:
       type: object
       required:
@@ -1398,6 +1603,10 @@ components:
       type: object
       properties:
         name:
+          type: string
+        plugin_key:
+          type: string
+        action:
           type: string
         input:
           type: object
@@ -1921,8 +2130,13 @@ components:
       properties:
         name:
           type: string
+        job_definition_id:
+          type: integer
         mode:
           type: string
+        default_input:
+          type: object
+          additionalProperties: true
         enabled:
           type: boolean
     TriggerCreateResult:

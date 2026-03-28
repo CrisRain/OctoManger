@@ -12,30 +12,26 @@ import (
 	triggerapp "octomanger/internal/domains/triggers/app"
 	triggerdomain "octomanger/internal/domains/triggers/domain"
 	triggerpostgres "octomanger/internal/domains/triggers/infra/postgres"
-	"octomanger/internal/platform/auth"
 	"octomanger/internal/platform/httpx"
 )
 
 type Handler struct {
-	adminKey string
-	service  triggerapp.Service
+	service triggerapp.Service
 }
 
-func NewHandler(adminKey string, service triggerapp.Service) Handler {
-	return Handler{adminKey: adminKey, service: service}
+func NewHandler(service triggerapp.Service) Handler {
+	return Handler{service: service}
 }
 
 // Register registers trigger routes on the v2 group.
-// Webhooks are registered on root to avoid the /api/v2 prefix.
-func (h Handler) Register(v2 *route.RouterGroup, root *route.RouterGroup) {
-	guard := auth.RequireAdmin(h.adminKey)
+func (h Handler) Register(v2 *route.RouterGroup) {
 	v2.GET("/triggers", h.list)
-	v2.POST("/triggers", guard, h.create)
+	v2.POST("/triggers", h.create)
 	v2.GET("/triggers/:id", h.get)
-	v2.PATCH("/triggers/:id", guard, h.patch)
-	v2.DELETE("/triggers/:id", guard, h.delete)
-	v2.POST("/triggers/:id/fire", guard, h.fireByID)
-	root.POST("/api/v2/webhooks/:key", h.fireByKey) // no auth guard — token in header
+	v2.PATCH("/triggers/:id", h.patch)
+	v2.DELETE("/triggers/:id", h.delete)
+	v2.POST("/triggers/:id/fire", h.fireByID)
+	v2.POST("/webhooks/:key", h.fireByKey)
 }
 
 func (h Handler) get(ctx context.Context, c *app.RequestContext) {
@@ -57,12 +53,20 @@ func (h Handler) get(ctx context.Context, c *app.RequestContext) {
 }
 
 func (h Handler) list(ctx context.Context, c *app.RequestContext) {
-	items, err := h.service.List(ctx)
+	page, err := httpx.ParsePageRequest(c)
+	if err != nil {
+		httpx.BadRequest(ctx, c, err.Error())
+		return
+	}
+	items, total, err := h.service.ListPage(ctx, page.Limit, page.Offset)
 	if err != nil {
 		httpx.InternalServerError(ctx, c, err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, map[string]any{"items": items})
+	c.JSON(http.StatusOK, map[string]any{
+		"items":      items,
+		"pagination": httpx.BuildPageMeta(page, total),
+	})
 }
 
 func (h Handler) create(ctx context.Context, c *app.RequestContext) {

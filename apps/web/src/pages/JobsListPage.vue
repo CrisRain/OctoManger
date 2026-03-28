@@ -112,6 +112,22 @@ async function deleteJob(job: JobDefinition) {
   );
 }
 
+// 批量立即执行
+async function handleBatchEnqueue(items: JobDefinition[]) {
+  if (!items.length) return;
+  const confirmed = await confirm.confirm(`确定要立即执行选中的 ${items.length} 个任务吗？`);
+  if (!confirmed) return;
+
+  await withErrorHandler(
+    async () => {
+      await Promise.all(items.map((item) => enqueue.execute(item.id)));
+      message.success(`已加入执行队列 (${items.length} 个)`);
+      await refresh();
+    },
+    { action: "批量执行", showSuccess: false }
+  );
+}
+
 // 批量删除
 async function handleBatchDelete(items: JobDefinition[]) {
   const confirmed = await confirm.confirm(`确定要删除选中的 ${items.length} 个任务吗？`);
@@ -138,6 +154,15 @@ async function handleBatchExport(items: JobDefinition[]) {
   URL.revokeObjectURL(url);
   message.success(`已导出 ${items.length} 个任务`);
 }
+
+const rowActions = [
+  { key: "view", label: "查看详情", icon: "IconEye" },
+  { key: "execute", label: "立即执行", icon: "IconPlayArrow" },
+  { key: "edit", label: "编辑", icon: "IconEdit" },
+  { key: "copy", label: "复制Key", icon: "IconCopy" },
+  { key: "delete-divider", divider: true },
+  { key: "delete", label: "删除", icon: "IconDelete", danger: true },
+];
 </script>
 
 <template>
@@ -167,6 +192,24 @@ async function handleBatchExport(items: JobDefinition[]) {
       @batch-delete="handleBatchDelete"
       @batch-export="handleBatchExport"
     >
+      <template #batch-actions="{ selectedItems }">
+        <button type="button"
+          aria-label="批量立即执行"
+          title="批量立即执行"
+          class="relative inline-flex h-7 cursor-pointer items-center gap-1 rounded-lg px-2 text-xs font-medium text-amber-600 transition-all hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/50"
+          @click="handleBatchEnqueue(selectedItems)"
+        >
+          <icon-play-arrow class="h-3.5 w-3.5" aria-hidden="true" />
+          立即执行
+        </button>
+        <div class="h-4 w-px bg-slate-200 mx-0.5" aria-hidden="true" />
+      </template>
+      <template #mobile-batch-actions="{ selectedItems }">
+        <button type="button"
+          class="cursor-pointer rounded-lg border-0 bg-amber-500 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-amber-600"
+          @click="handleBatchEnqueue(selectedItems)"
+        >执行</button>
+      </template>
       <template #filters>
         <!-- 调度类型筛选 -->
         <div class="flex flex-wrap items-center gap-2">
@@ -271,14 +314,7 @@ async function handleBatchExport(items: JobDefinition[]) {
             <template #cell="{ record }">
               <RowActionsMenu
                 :item="record"
-                :actions="[
-                  { key: 'view', label: '查看详情', icon: 'IconEye' },
-                  { key: 'execute', label: '立即执行', icon: 'IconPlayArrow' },
-                  { key: 'edit', label: '编辑', icon: 'IconEdit' },
-                  { key: 'copy', label: '复制Key', icon: 'IconCopy' },
-                  { key: 'delete-divider', divider: true },
-                  { key: 'delete', label: '删除', icon: 'IconDelete', danger: true },
-                ]"
+                :actions="rowActions"
                 @action="handleQuickAction"
               />
             </template>
@@ -318,14 +354,7 @@ async function handleBatchExport(items: JobDefinition[]) {
           </div>
           <RowActionsMenu
             :item="record"
-            :actions="[
-              { key: 'view', label: '查看详情', icon: 'IconEye' },
-              { key: 'execute', label: '立即执行', icon: 'IconPlayArrow' },
-              { key: 'edit', label: '编辑', icon: 'IconEdit' },
-              { key: 'copy', label: '复制Key', icon: 'IconCopy' },
-              { key: 'delete-divider', divider: true },
-              { key: 'delete', label: '删除', icon: 'IconDelete', danger: true },
-            ]"
+            :actions="rowActions"
             @action="handleQuickAction"
           />
         </div>

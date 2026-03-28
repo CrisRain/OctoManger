@@ -46,9 +46,7 @@ export PYTHON_BIN="python3"
 初始化数据库并启动后端：
 
 ```bash
-go run ./apps/migrate migrate
-go run ./apps/api
-go run ./apps/worker
+go run ./apps/octomanger
 ```
 
 ---
@@ -453,9 +451,7 @@ python3 plugins/modules/octo_demo/fake_server.py
 ### 13.2 启动主系统
 
 ```bash
-go run ./apps/migrate migrate
-go run ./apps/api
-go run ./apps/worker
+go run ./apps/octomanger
 ```
 
 ### 13.3 确认插件被发现

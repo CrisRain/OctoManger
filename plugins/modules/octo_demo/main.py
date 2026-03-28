@@ -12,7 +12,8 @@ OctoDemo 插件 — 演示所有 Octo Plugin SDK 功能
   • success / error 响应
   • REGISTER action + session 字段（自动填充新账号凭证）
 
-配合使用：先启动 fake_server.py 提供模拟数据，再将本插件挂载到 OctoManger。
+演示服务默认由插件主进程内嵌启动，可在账号详情页通过 Agent 按钮触发。
+`fake_server.py` 仍保留为本地调试入口，但不再是主流程依赖。
 """
 from __future__ import annotations
 
@@ -21,6 +22,9 @@ import os
 from typing import Any
 
 import octo
+from fake_server import DEFAULT_BASE_URL, get_server_manager, parse_base_url
+
+_fake_server_manager = get_server_manager()
 
 # ============================================================================
 # 1. 声明模块
@@ -38,18 +42,18 @@ module = octo.Module(
             "username": {
                 "type": "string",
                 "title": "用户名",
-                "description": "fake_server 中的用户名",
+                "description": "内置演示服务中的用户名",
             },
             "api_key": {
                 "type": "string",
                 "title": "API Key",
-                "description": "fake_server 返回的 API 密钥",
+                "description": "内置演示服务返回的 API 密钥",
             },
             "base_url": {
                 "type": "string",
                 "title": "服务地址",
-                "description": "fake_server 监听地址，例如 http://127.0.0.1:18080",
-                "default": "http://127.0.0.1:18080",
+                "description": "内置演示服务监听地址，例如 http://127.0.0.1:18080",
+                "default": DEFAULT_BASE_URL,
             },
         },
         "required": ["username", "api_key"],
@@ -75,7 +79,7 @@ module = octo.Module(
             label="Agent 循环提示 (秒)",
             type="string",
             default="60",
-            description="仅用于文档说明；实际间隔由 Worker 的 WORKER_AGENT_LOOP_INTERVAL 控制",
+            description="用于估算内置演示服务租约；实际循环间隔仍由 Worker 的 WORKER_AGENT_LOOP_INTERVAL 控制",
         ),
     ],
 )
@@ -130,6 +134,7 @@ module.set_ui(
                             form=[
                                 octo.ParamSpec(
                                     name="status",
+                                    label="任务状态",
                                     type="string",
                                     required=False,
                                     choices=["", "pending", "in_progress", "completed", "cancelled"],
@@ -137,6 +142,7 @@ module.set_ui(
                                 ),
                                 octo.ParamSpec(
                                     name="priority",
+                                    label="优先级",
                                     type="string",
                                     required=False,
                                     choices=["", "low", "medium", "high", "critical"],
@@ -144,9 +150,11 @@ module.set_ui(
                                 ),
                                 octo.ParamSpec(
                                     name="page",
-                                    type="string",
-                                    default="1",
+                                    label="页码",
+                                    type="integer",
+                                    default=1,
                                     required=False,
+                                    min=1,
                                     description="页码",
                                 ),
                             ],
@@ -164,12 +172,15 @@ module.set_ui(
                             form=[
                                 octo.ParamSpec(
                                     name="title",
+                                    label="任务标题",
                                     type="string",
                                     required=True,
+                                    placeholder="例如：跟进客户消息",
                                     description="任务标题",
                                 ),
                                 octo.ParamSpec(
                                     name="priority",
+                                    label="优先级",
                                     type="string",
                                     required=False,
                                     default="medium",
@@ -191,6 +202,7 @@ module.set_ui(
                             form=[
                                 octo.ParamSpec(
                                     name="task_id",
+                                    label="任务 ID",
                                     type="string",
                                     required=True,
                                     description="任务 ID（从查询结果中复制）",
@@ -205,6 +217,7 @@ module.set_ui(
                             form=[
                                 octo.ParamSpec(
                                     name="task_id",
+                                    label="任务 ID",
                                     type="string",
                                     required=True,
                                     description="任务 ID",
@@ -216,7 +229,70 @@ module.set_ui(
             ],
         ),
 
-        # ── Tab 3: 注册（仅在「创建账号」页面显示）──────────────────────────
+        # ── Tab 3: 演示服务──────────────────────────────────────────────────
+        octo.UITab(
+            key="demo_server",
+            label="演示服务",
+            context="plugin",
+            sections=[
+                octo.UISection(
+                    title="插件主进程内置服务",
+                    buttons=[
+                        octo.UIButton(
+                            action="AGENT_FAKE_SERVER",
+                            label="启动并保活演示服务",
+                            mode="agent",
+                            form=[
+                                octo.ParamSpec(
+                                    name="account",
+                                    label="关联账号",
+                                    type="account",
+                                    required=False,
+                                    account_type_key=module.key,
+                                    description="选填，选择后会把演示服务地址同步回该账号的 base_url",
+                                ),
+                                octo.ParamSpec(
+                                    name="base_url",
+                                    label="服务地址",
+                                    type="string",
+                                    default=DEFAULT_BASE_URL,
+                                    required=False,
+                                    placeholder="http://127.0.0.1:18081",
+                                    description="不填则使用默认地址，适合在插件详情页直接起一个本地演示服务",
+                                ),
+                                octo.ParamSpec(
+                                    name="lease_seconds",
+                                    label="保活时长（秒）",
+                                    type="integer",
+                                    default=180,
+                                    required=False,
+                                    min=120,
+                                    max=3600,
+                                    description="本轮 Agent 续租时长，过短会被自动提升到安全下限",
+                                ),
+                            ],
+                        ),
+                        octo.UIButton(
+                            action="AGENT_MONITOR",
+                            label="创建任务监控 Agent",
+                            mode="agent",
+                            form=[
+                                octo.ParamSpec(
+                                    name="account",
+                                    label="监控账号",
+                                    type="account",
+                                    required=True,
+                                    account_type_key=module.key,
+                                    description="必填，选择要监控的 OctoDemo 账号",
+                                ),
+                            ],
+                        ),
+                    ],
+                ),
+            ],
+        ),
+
+        # ── Tab 4: 注册（仅在「创建账号」页面显示）──────────────────────────
         octo.UITab(
             key="register",
             label="注册",
@@ -232,6 +308,7 @@ module.set_ui(
                             form=[
                                 octo.ParamSpec(
                                     name="display_name",
+                                    label="显示名称",
                                     type="string",
                                     required=False,
                                     description="显示名称（可选，不填则使用用户名）",
@@ -259,15 +336,98 @@ module.set_ui(
 # ============================================================================
 
 def _api_client(req: octo.ModuleRequest) -> octo.OctoClient:
-    """用账号 spec 中的 base_url / api_key 构造指向 fake_server 的客户端。"""
-    base_url = str(req.spec.get("base_url", "http://127.0.0.1:18080")).rstrip("/")
-    api_key = str(req.spec.get("api_key", ""))
+    """用账号 spec 中的 base_url / api_key 构造指向演示服务的客户端。"""
+    base_url = _base_url(req)
+    spec = _resolved_spec(req)
+    api_key = str(spec.get("api_key", ""))
     return octo.OctoClient(base_url, api_key)
 
 
+def _settings(req: octo.ModuleRequest) -> dict[str, Any]:
+    return octo.as_dict(req.context.get("settings"))
+
+
+def _base_url(req: octo.ModuleRequest) -> str:
+    param_base_url = str(req.params.get("base_url", "")).strip()
+    if param_base_url:
+        return param_base_url.rstrip("/")
+
+    spec = _resolved_spec(req)
+    return str(spec.get("base_url", DEFAULT_BASE_URL) or DEFAULT_BASE_URL).rstrip("/")
+
+
 def _debug(req: octo.ModuleRequest) -> bool:
-    """读取 debug_mode 插件设置（通过 params 注入）。"""
-    return str(req.params.get("debug_mode", "false")).lower() == "true"
+    """读取 debug_mode 插件设置。"""
+    return str(_settings(req).get("debug_mode", "false")).lower() == "true"
+
+
+def _agent_lease_seconds(req: octo.ModuleRequest) -> int:
+    param_hint = req.params.get("lease_seconds")
+    if param_hint not in (None, ""):
+        try:
+            requested = int(param_hint)
+        except (TypeError, ValueError):
+            requested = 0
+        if requested > 0:
+            return max(120, min(3600, requested))
+
+    hint_raw = str(_settings(req).get("agent_loop_hint", "60")).strip() or "60"
+    try:
+        hint_seconds = max(10, int(hint_raw))
+    except ValueError:
+        hint_seconds = 60
+    return max(120, min(3600, hint_seconds * 3))
+
+
+def _sync_account_base_url(req: octo.ModuleRequest, base_url: str) -> None:
+    octo_client = req.client()
+    account = _resolved_account(req)
+    raw_account_id = account.get("id")
+    account_id = int(raw_account_id) if isinstance(raw_account_id, int) else None
+    if octo_client is None or account_id is None:
+        return
+
+    spec = octo.as_dict(account.get("spec"))
+    current = str(spec.get("base_url", "") or "").rstrip("/")
+    if current == base_url:
+        return
+
+    try:
+        octo_client.patch_account_spec(account_id, {"base_url": base_url})
+        octo.emit_log("已将演示服务地址同步到账号 spec", account_id=account_id, base_url=base_url)
+    except Exception as exc:
+        octo.emit_log("同步演示服务地址失败（非致命）", level="warning", error=str(exc))
+
+
+def _resolved_account(req: octo.ModuleRequest) -> dict[str, Any]:
+    return octo.as_dict(req.load_account(type_key=module.key))
+
+
+def _resolved_spec(req: octo.ModuleRequest) -> dict[str, Any]:
+    return octo.as_dict(req.load_spec(type_key=module.key))
+
+
+def _lookup_failure(req: octo.ModuleRequest) -> dict[str, Any] | None:
+    if req.account_id is None or req.has_loaded_account():
+        return None
+    detail = str(req.account_lookup_error()).strip()
+    if not detail:
+        detail = "internal account lookup returned empty result"
+    return octo.error("ACCOUNT_LOOKUP_FAILED", f"通过内部接口拉取账号失败: {detail}")
+
+
+def _credentials(req: octo.ModuleRequest) -> tuple[str, str] | dict[str, Any]:
+    spec = _resolved_spec(req)
+    username = str(spec.get("username", "")).strip()
+    api_key = str(spec.get("api_key", "")).strip()
+    if username and api_key:
+        return username, api_key
+    lookup_failed = _lookup_failure(req)
+    if lookup_failed is not None:
+        return lookup_failed
+    if req.account_id is not None and req.has_loaded_account():
+        return octo.error("MISSING_CREDENTIALS", "账号凭据缺失：内部账号 spec.username 和 spec.api_key 均不能为空")
+    return octo.error("MISSING_CREDENTIALS", "spec.username 和 spec.api_key 均不能为空")
 
 
 # ============================================================================
@@ -284,12 +444,11 @@ def handle_verify(req: octo.ModuleRequest) -> dict[str, Any]:
       - OctoAPIError 捕获
       - success / error 返回
     """
-    username = str(req.spec.get("username", "")).strip()
-    api_key = str(req.spec.get("api_key", "")).strip()
-    base_url = str(req.spec.get("base_url", "http://127.0.0.1:18080")).rstrip("/")
-
-    if not username or not api_key:
-        return octo.error("MISSING_CREDENTIALS", "spec.username 和 spec.api_key 均不能为空")
+    creds = _credentials(req)
+    if isinstance(creds, dict):
+        return creds
+    username, api_key = creds
+    base_url = _base_url(req)
 
     octo.emit_log("开始验证账号", level="info", username=username)
 
@@ -321,7 +480,8 @@ def handle_get_profile(req: octo.ModuleRequest) -> dict[str, Any]:
       - OctoClient.patch_account_spec() 回写账号字段
       - req.client() 获取 OctoManger 内部 API 客户端
     """
-    username = str(req.spec.get("username", "")).strip()
+    spec = _resolved_spec(req)
+    username = str(spec.get("username", "")).strip()
     if not username:
         return octo.error("MISSING_USERNAME", "spec.username 不能为空")
 
@@ -344,9 +504,12 @@ def handle_get_profile(req: octo.ModuleRequest) -> dict[str, Any]:
 
         # 通过 OctoManger 内部 API 将新字段写回账号 spec
         octo_client = req.client()
-        if octo_client and req.account_id:
+        account = _resolved_account(req)
+        raw_account_id = account.get("id")
+        account_id = int(raw_account_id) if isinstance(raw_account_id, int) else None
+        if octo_client and account_id is not None:
             try:
-                octo_client.patch_account_spec(req.account_id, {
+                octo_client.patch_account_spec(account_id, {
                     "display_name": user.get("display_name"),
                     "plan": user.get("plan"),
                     "tasks_quota": user.get("tasks_quota"),
@@ -365,14 +528,18 @@ def handle_get_profile(req: octo.ModuleRequest) -> dict[str, Any]:
     "LIST_TASKS",
     description="分页查询账号下的任务",
     params=[
-        octo.ParamSpec(name="status",    type="string", required=False, description="状态过滤"),
-        octo.ParamSpec(name="priority",  type="string", required=False, description="优先级过滤"),
-        octo.ParamSpec(name="page",      type="string", default="1",    required=False, description="页码"),
-        octo.ParamSpec(name="page_size", type="string", default="20",   required=False, description="每页条数"),
+        octo.ParamSpec(name="status", label="任务状态", type="string", required=False, description="状态过滤"),
+        octo.ParamSpec(name="priority", label="优先级", type="string", required=False, description="优先级过滤"),
+        octo.ParamSpec(name="page", label="页码", type="integer", default=1, required=False, min=1, description="页码"),
+        octo.ParamSpec(name="page_size", label="每页条数", type="integer", default=20, required=False, min=1, max=50, description="每页条数"),
     ],
 )
 def handle_list_tasks(req: octo.ModuleRequest) -> dict[str, Any]:
     """演示：ParamSpec 可选参数读取 + 分页查询。"""
+    creds = _credentials(req)
+    if isinstance(creds, dict):
+        return creds
+
     query: dict[str, Any] = {}
     status = str(req.params.get("status", "")).strip()
     priority = str(req.params.get("priority", "")).strip()
@@ -406,8 +573,8 @@ def handle_list_tasks(req: octo.ModuleRequest) -> dict[str, Any]:
     "CREATE_TASK",
     description="创建新任务（mode=job，写入后台日志）",
     params=[
-        octo.ParamSpec(name="title",    type="string", required=True,  description="任务标题"),
-        octo.ParamSpec(name="priority", type="string", required=False, default="medium",
+        octo.ParamSpec(name="title", label="任务标题", type="string", required=True, description="任务标题"),
+        octo.ParamSpec(name="priority", label="优先级", type="string", required=False, default="medium",
                        choices=["low", "medium", "high", "critical"], description="优先级"),
     ],
 )
@@ -443,7 +610,7 @@ def handle_create_task(req: octo.ModuleRequest) -> dict[str, Any]:
     "COMPLETE_TASK",
     description="将指定任务标记为已完成",
     params=[
-        octo.ParamSpec(name="task_id", type="string", required=True, description="任务 ID"),
+        octo.ParamSpec(name="task_id", label="任务 ID", type="string", required=True, description="任务 ID"),
     ],
 )
 def handle_complete_task(req: octo.ModuleRequest) -> dict[str, Any]:
@@ -467,7 +634,7 @@ def handle_complete_task(req: octo.ModuleRequest) -> dict[str, Any]:
     "DELETE_TASK",
     description="删除指定任务",
     params=[
-        octo.ParamSpec(name="task_id", type="string", required=True, description="任务 ID"),
+        octo.ParamSpec(name="task_id", label="任务 ID", type="string", required=True, description="任务 ID"),
     ],
 )
 def handle_delete_task(req: octo.ModuleRequest) -> dict[str, Any]:
@@ -491,7 +658,7 @@ def handle_delete_task(req: octo.ModuleRequest) -> dict[str, Any]:
     "REGISTER",
     description="自动注册新账号并填充凭证（仅在创建账号时使用）",
     params=[
-        octo.ParamSpec(name="display_name", type="string", required=False, description="显示名称"),
+        octo.ParamSpec(name="display_name", label="显示名称", type="string", required=False, description="显示名称"),
     ],
 )
 def handle_register(req: octo.ModuleRequest) -> dict[str, Any]:
@@ -500,15 +667,21 @@ def handle_register(req: octo.ModuleRequest) -> dict[str, Any]:
       - success(result, session=...) — session 字段由 OctoManger 自动合并到账号 spec
       - 在 context="create" 的 Tab 中执行，不需要预先填写 api_key
     """
-    username = str(req.spec.get("username", "")).strip()
+    spec = _resolved_spec(req)
+    username = str(spec.get("username", "")).strip()
     if not username:
         raise ValueError("spec.username 是必填项，请先填写用户名再点注册")
 
     display_name = str(req.params.get("display_name", "") or username).strip()
-    base_url = str(req.spec.get("base_url", "http://127.0.0.1:18080")).rstrip("/")
+    base_url = _base_url(req)
+
+    try:
+        normalized_base_url, _, _ = parse_base_url(base_url)
+    except ValueError as exc:
+        return octo.error("INVALID_BASE_URL", str(exc))
 
     # 注册端点无需认证，api_token 传空串
-    register_client = octo.OctoClient(base_url, "")
+    register_client = octo.OctoClient(normalized_base_url, "")
     octo.emit_log("正在注册账号", username=username)
 
     try:
@@ -531,6 +704,65 @@ def handle_register(req: octo.ModuleRequest) -> dict[str, Any]:
     )
 
 
+# ── AGENT_FAKE_SERVER ────────────────────────────────────────────────────────
+
+@module.action("AGENT_FAKE_SERVER", description="Agent 模式：启动并保活插件内置演示服务")
+def handle_agent_fake_server(req: octo.ModuleRequest) -> dict[str, Any]:
+    agent_id = str(req.context.get("agent_id", "unknown")).strip() or "unknown"
+    requested_base_url = _base_url(req)
+    lease_seconds = _agent_lease_seconds(req)
+
+    try:
+        normalized_base_url, _, _ = parse_base_url(requested_base_url)
+    except ValueError as exc:
+        octo.emit_daemon_error("INVALID_BASE_URL", str(exc))
+        return octo.error("INVALID_BASE_URL", str(exc))
+
+    octo.emit_daemon_init_ok(
+        "内置演示服务 Agent 已就绪",
+        agent_id=agent_id,
+        base_url=normalized_base_url,
+    )
+
+    with octo.log_context(agent_id=agent_id, base_url=normalized_base_url, mode="agent"):
+        octo.emit_log("开始确保内置演示服务运行", lease_seconds=lease_seconds)
+        try:
+            server = _fake_server_manager.ensure_running(
+                base_url=normalized_base_url,
+                owner_agent_id=agent_id,
+                lease_seconds=lease_seconds,
+            )
+        except Exception as exc:
+            octo.emit_log("启动内置演示服务失败", level="error", error=str(exc))
+            octo.emit_daemon_error("DEMO_SERVER_START_FAILED", f"启动内置演示服务失败: {exc}")
+            return octo.error("DEMO_SERVER_START_FAILED", str(exc))
+
+        actual_base_url = str(server.get("base_url", normalized_base_url))
+        _sync_account_base_url(req, actual_base_url)
+
+        state = str(server.get("state", "running"))
+        message = "演示服务已启动" if state == "started" else "演示服务运行中"
+        octo.emit_daemon_event(
+            {
+                "type": "demo_server_status",
+                "server": server,
+                "lease_seconds": lease_seconds,
+            },
+            message=f"{message}：{actual_base_url}",
+        )
+        octo.emit_daemon_done(
+            "本轮演示服务保活完成",
+            base_url=actual_base_url,
+            state=state,
+            lease_expires_at=server.get("lease_expires_at"),
+        )
+
+    return octo.success({
+        "server": server,
+        "lease_seconds": lease_seconds,
+    })
+
+
 # ── AGENT_MONITOR ─────────────────────────────────────────────────────────────
 
 @module.action("AGENT_MONITOR", description="Agent 模式：定期采集任务统计并上报异常")
@@ -546,13 +778,14 @@ def handle_agent_monitor(req: octo.ModuleRequest) -> dict[str, Any]:
     Worker 的 RunSupervisor 每隔 WORKER_AGENT_LOOP_INTERVAL 调用一次此 action。
     """
     agent_id = str(req.context.get("agent_id", "unknown"))
-    username = str(req.spec.get("username", "")).strip()
-    api_key = str(req.spec.get("api_key", "")).strip()
-    base_url = str(req.spec.get("base_url", "http://127.0.0.1:18080")).rstrip("/")
-
-    if not username or not api_key:
-        octo.emit_daemon_error("MISSING_CREDENTIALS", "username 和 api_key 均不能为空")
-        return octo.error("MISSING_CREDENTIALS", "缺少账号凭证")
+    creds = _credentials(req)
+    if isinstance(creds, dict):
+        detail = str(creds.get("message", "")).strip() or "缺少账号凭证"
+        code = str(creds.get("error", "")).strip() or "MISSING_CREDENTIALS"
+        octo.emit_daemon_error(code, detail)
+        return creds
+    username, api_key = creds
+    base_url = _base_url(req)
 
     # 1. 通知 Worker：初始化完成
     octo.emit_daemon_init_ok(

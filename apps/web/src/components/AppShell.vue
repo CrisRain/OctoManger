@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watchEffect } from "vue";
+import { storeToRefs } from "pinia";
 import { useRoute, useRouter } from "vue-router";
 import { useAccountTypes } from "@/composables";
 import { navRoutes, routeNames, searchRoutes, shortcutRoutes, to, type IconKey } from "@/router/registry";
 import { useCommandPaletteStore } from "@/store/command-palette";
+import { useConfigStore } from "@/store";
 
 import {
   IconDashboard, IconLayers, IconUser, IconEmail, IconSchedule,
@@ -27,6 +29,8 @@ const route = useRoute();
 const router = useRouter();
 const { data: accountTypes } = useAccountTypes();
 const commandPalette = useCommandPaletteStore();
+const configStore = useConfigStore();
+const { config } = storeToRefs(configStore);
 
 const mobileOpen = ref(false);
 const keySequence = ref<string[]>([]);
@@ -96,6 +100,11 @@ const activeNavChild = computed(() => {
 
 const currentTitle = computed(() => {
   return activeNavChild.value?.label ?? activeNavItem.value?.label ?? "控制台";
+});
+
+const appDisplayName = computed(() => {
+  const value = config.value?.app_name;
+  return typeof value === "string" && value.trim() ? value.trim() : "OctoManager";
 });
 
 function closeMobile() {
@@ -266,6 +275,7 @@ function handleKeyDown(e: KeyboardEvent) {
 
 onMounted(() => {
   window.addEventListener("keydown", handleKeyDown);
+  void configStore.fetchConfig();
 });
 
 onUnmounted(() => {
@@ -273,6 +283,13 @@ onUnmounted(() => {
   if (keySequenceTimer.value) {
     clearTimeout(keySequenceTimer.value);
   }
+});
+
+watchEffect(() => {
+  if (typeof document === "undefined") {
+    return;
+  }
+  document.title = `${currentTitle.value} · ${appDisplayName.value}`;
 });
 </script>
 
@@ -328,7 +345,7 @@ onUnmounted(() => {
           </div>
           <div class="min-w-0 flex-1">
             <div class="text-[11px] font-semibold uppercase tracking-[0.24em] text-white/60">control</div>
-            <div class="truncate text-base font-extrabold tracking-[-0.02em] text-white">OctoManager</div>
+            <div class="truncate text-base font-extrabold tracking-[-0.02em] text-white">{{ appDisplayName }}</div>
           </div>
           <button
             type="button"
@@ -357,7 +374,7 @@ onUnmounted(() => {
             </div>
             <div>
               <div class="text-[11px] font-semibold uppercase tracking-[0.24em] text-white/72">control</div>
-              <span class="text-[1.05rem] font-extrabold tracking-[-0.02em] text-white">OctoManager</span>
+              <span class="text-[1.05rem] font-extrabold tracking-[-0.02em] text-white">{{ appDisplayName }}</span>
             </div>
           </div>
           <AppNavList :items="navItems" />

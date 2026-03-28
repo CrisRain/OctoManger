@@ -12,29 +12,26 @@ import (
 	agentapp "octomanger/internal/domains/agents/app"
 	agentdomain "octomanger/internal/domains/agents/domain"
 	agentpostgres "octomanger/internal/domains/agents/infra/postgres"
-	"octomanger/internal/platform/auth"
 	"octomanger/internal/platform/httpx"
 )
 
 type Handler struct {
-	adminKey string
-	service  *agentapp.Service
+	service *agentapp.Service
 }
 
-func NewHandler(adminKey string, service *agentapp.Service) Handler {
-	return Handler{adminKey: adminKey, service: service}
+func NewHandler(service *agentapp.Service) Handler {
+	return Handler{service: service}
 }
 
 func (h Handler) Register(r *route.RouterGroup) {
-	guard := auth.RequireAdmin(h.adminKey)
 	r.GET("/agents", h.list)
-	r.POST("/agents", guard, h.create)
+	r.POST("/agents", h.create)
 	r.GET("/agents/:id", h.get)
-	r.PATCH("/agents/:id", guard, h.patch)
-	r.DELETE("/agents/:id", guard, h.delete)
+	r.PATCH("/agents/:id", h.patch)
+	r.DELETE("/agents/:id", h.delete)
 	r.GET("/agents/:id/status", h.status)
-	r.POST("/agents/:id/start", guard, h.start)
-	r.POST("/agents/:id/stop", guard, h.stop)
+	r.POST("/agents/:id/start", h.start)
+	r.POST("/agents/:id/stop", h.stop)
 	r.GET("/agents/:id/events", h.streamEvents)
 }
 
@@ -57,12 +54,20 @@ func (h Handler) get(ctx context.Context, c *app.RequestContext) {
 }
 
 func (h Handler) list(ctx context.Context, c *app.RequestContext) {
-	items, err := h.service.List(ctx)
+	page, err := httpx.ParsePageRequest(c)
+	if err != nil {
+		httpx.BadRequest(ctx, c, err.Error())
+		return
+	}
+	items, total, err := h.service.ListPage(ctx, page.Limit, page.Offset)
 	if err != nil {
 		httpx.InternalServerError(ctx, c, err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, map[string]any{"items": items})
+	c.JSON(http.StatusOK, map[string]any{
+		"items":      items,
+		"pagination": httpx.BuildPageMeta(page, total),
+	})
 }
 
 func (h Handler) create(ctx context.Context, c *app.RequestContext) {
@@ -180,8 +185,8 @@ func (h Handler) streamEvents(ctx context.Context, c *app.RequestContext) {
 
 	httpx.PrepareStream(c, func(w *httpx.StreamWriter) {
 		const (
-			minPoll          = 200 * time.Millisecond
-			maxPoll          = 2 * time.Second
+			minPoll           = 200 * time.Millisecond
+			maxPoll           = 2 * time.Second
 			heartbeatInterval = 5 * time.Second
 		)
 		afterID := int64(0)

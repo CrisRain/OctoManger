@@ -2,6 +2,15 @@ package agentdomain
 
 import "time"
 
+const (
+	DesiredStateRunning = "running"
+	DesiredStateStopped = "stopped"
+	RuntimeStateRunning = "running"
+	RuntimeStateIdle    = "idle"
+	RuntimeStateStopped = "stopped"
+	RuntimeStateError   = "error"
+)
+
 type Agent struct {
 	ID              int64          `json:"id"`
 	Name            string         `json:"name"`

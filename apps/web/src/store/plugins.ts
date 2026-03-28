@@ -1,14 +1,25 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
-import { getPluginSettings, listPlugins, syncPlugins, updatePluginSettings } from "@/api";
-import type { Plugin, PluginSyncResult } from "@/types";
+import {
+  getPluginRuntimeConfig,
+  getPluginSettings,
+  listPlugins,
+  syncPlugins,
+  updatePluginRuntimeConfig,
+  updatePluginSettings,
+} from "@/api";
+import type { Plugin, PluginRuntimeConfig, PluginRuntimeConfigInput, PluginSyncResult } from "@/types";
 import { normalizeListResponse } from "@/utils/normalizeListResponse";
 
 export const usePluginsStore = defineStore("plugins", () => {
   const plugins = ref<Plugin[]>([]);
   const pluginSettings = ref<Record<string, Record<string, unknown>>>({});
+  const pluginRuntimeConfigs = ref<Record<string, PluginRuntimeConfig>>({});
   const loading = ref(false);
-  const saving = ref(false);
+  const loadingSettings = ref(false);
+  const savingSettings = ref(false);
+  const loadingRuntimeConfig = ref(false);
+  const savingRuntimeConfig = ref(false);
   const error = ref<string | null>(null);
 
   async function fetchPlugins() {
@@ -24,7 +35,7 @@ export const usePluginsStore = defineStore("plugins", () => {
   }
 
   async function fetchPluginSettings(key: string) {
-    loading.value = true;
+    loadingSettings.value = true;
     error.value = null;
     try {
       const settings = await getPluginSettings(key);
@@ -34,12 +45,12 @@ export const usePluginsStore = defineStore("plugins", () => {
       error.value = e instanceof Error ? e.message : "请求失败";
       return null;
     } finally {
-      loading.value = false;
+      loadingSettings.value = false;
     }
   }
 
   async function savePluginSettings(key: string, values: Record<string, unknown>) {
-    saving.value = true;
+    savingSettings.value = true;
     error.value = null;
     try {
       await updatePluginSettings(key, values);
@@ -48,7 +59,40 @@ export const usePluginsStore = defineStore("plugins", () => {
       error.value = e instanceof Error ? e.message : "保存失败";
       throw e;
     } finally {
-      saving.value = false;
+      savingSettings.value = false;
+    }
+  }
+
+  async function fetchPluginRuntimeConfigEntry(key: string) {
+    loadingRuntimeConfig.value = true;
+    error.value = null;
+    try {
+      const config = await getPluginRuntimeConfig(key);
+      pluginRuntimeConfigs.value = { ...pluginRuntimeConfigs.value, [key]: config };
+      return config;
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : "请求失败";
+      return null;
+    } finally {
+      loadingRuntimeConfig.value = false;
+    }
+  }
+
+  async function savePluginRuntimeConfigEntry(
+    key: string,
+    value: PluginRuntimeConfigInput,
+  ) {
+    savingRuntimeConfig.value = true;
+    error.value = null;
+    try {
+      const config = await updatePluginRuntimeConfig(key, value);
+      pluginRuntimeConfigs.value = { ...pluginRuntimeConfigs.value, [key]: config };
+      return config;
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : "保存失败";
+      throw e;
+    } finally {
+      savingRuntimeConfig.value = false;
     }
   }
 
@@ -70,12 +114,18 @@ export const usePluginsStore = defineStore("plugins", () => {
   return {
     plugins,
     pluginSettings,
+    pluginRuntimeConfigs,
     loading,
-    saving,
+    loadingSettings,
+    savingSettings,
+    loadingRuntimeConfig,
+    savingRuntimeConfig,
     error,
     fetchPlugins,
     fetchPluginSettings,
     savePluginSettings,
+    fetchPluginRuntimeConfig: fetchPluginRuntimeConfigEntry,
+    savePluginRuntimeConfig: savePluginRuntimeConfigEntry,
     syncAllPlugins,
   };
 });

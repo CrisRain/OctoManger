@@ -34,7 +34,7 @@ onMounted(async () => {
 });
 
 // ── Form state ────────────────────────────────────────────────────────────────
-const form = reactive({ provider: "", status: "active" });
+const form = reactive({ provider: "" });
 
 interface ConfigEntry { key: string; val: string; hidden: boolean }
 const configEntries = ref<ConfigEntry[]>([]);
@@ -45,7 +45,6 @@ function isSecret(k: string) { return SECRET_RE.test(k); }
 watch(account, (acc) => {
   if (!acc) return;
   form.provider = acc.provider;
-  form.status = acc.status;
   configEntries.value = Object.entries(acc.config ?? {}).map(([key, value]) => ({
     key,
     val: typeof value === "string" ? value : JSON.stringify(value),
@@ -82,7 +81,6 @@ async function handleSave() {
   try {
     await patch.execute(accountId, {
       provider: form.provider || undefined,
-      status: form.status || undefined,
       config: buildConfig(),
     });
     message.success("已保存");
@@ -112,7 +110,8 @@ async function handleBuildAuthorize() {
 async function handleExchange() {
   if (!authCode.value.trim()) { message.error("请填写授权码"); return; }
   try {
-    await exchangeCode.execute(accountId, { code: authCode.value.trim() });
+    const updated = await exchangeCode.execute(accountId, { code: authCode.value.trim() });
+    account.value = updated;
     authCode.value = "";
     message.success("授权码交换成功");
   } catch (e) {
@@ -155,14 +154,10 @@ async function handleExchange() {
             <ui-form-item label="服务商">
               <ui-input v-model="form.provider" placeholder="例如 gmail / outlook" allow-clear />
             </ui-form-item>
-            <ui-form-item label="状态">
-              <ui-select v-model="form.status" class="w-full" popup-container="body">
-                <ui-option value="active">已激活</ui-option>
-                <ui-option value="pending">待验证</ui-option>
-                <ui-option value="inactive">已停用</ui-option>
-              </ui-select>
-            </ui-form-item>
           </ui-form>
+          <p class="mt-3 text-sm leading-6 text-slate-500">
+            邮箱状态会根据 OAuth 授权和后续验证结果自动更新，这里不再手工维护状态。
+          </p>
         </ui-card>
 
         <ui-card>

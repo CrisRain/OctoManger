@@ -3,11 +3,12 @@ package agentpostgres
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
+	"gorm.io/gorm"
 	agentdomain "octomanger/internal/domains/agents/domain"
-	"octomanger/internal/platform/dbutil"
 )
 
 const (
@@ -88,48 +89,41 @@ func (r Repository) refreshAgentLogsCache(ctx context.Context, agentID int64) {
 }
 
 func (r Repository) loadRecentAgentLogs(ctx context.Context, agentID int64) ([]agentdomain.AgentLog, error) {
-	rows, err := r.db.WithContext(ctx).Raw(`
-		SELECT id, agent_id, event_type, message, payload_json, created_at
-		FROM (
-			SELECT id, agent_id, event_type, message, payload_json, created_at
-			FROM agent_logs
-			WHERE agent_id = $1 AND (event_type != '' OR message != '')
-			ORDER BY id DESC
-			LIMIT $2
-		) recent
-		ORDER BY id ASC`, agentID, agentLogLimit).Rows()
-	if err != nil {
+	var records []agentLogRecord
+	if err := r.db.WithContext(ctx).
+		Where("agent_id = ? AND (event_type <> ? OR message <> ?)", agentID, "", "").
+		Order("id DESC").
+		Limit(agentLogLimit).
+		Find(&records).Error; err != nil {
 		return nil, fmt.Errorf("load recent agent logs: %w", err)
 	}
-	defer rows.Close()
 
-	items := make([]agentdomain.AgentLog, 0)
-	for rows.Next() {
-		var item agentdomain.AgentLog
-		var payloadJSON []byte
-		if err := rows.Scan(&item.ID, &item.AgentID, &item.EventType, &item.Message, &payloadJSON, &item.CreatedAt); err != nil {
-			return nil, fmt.Errorf("scan agent log: %w", err)
-		}
-		item.Payload = dbutil.DecodeJSONMap(payloadJSON)
-		items = append(items, item)
+	items := make([]agentdomain.AgentLog, len(records))
+	for i := range records {
+		items[len(records)-1-i] = records[i].toDomain()
 	}
-	return items, rows.Err()
+	return items, nil
 }
 
 func (r Repository) trimAgentLogs(ctx context.Context, agentID int64) error {
-	result := r.db.WithContext(ctx).Exec(`
-		DELETE FROM agent_logs
-		WHERE agent_id = $1
-		  AND id < COALESCE((
-			SELECT id
-			FROM agent_logs
-			WHERE agent_id = $1
-			ORDER BY id DESC
-			OFFSET $2
-			LIMIT 1
-		  ), 0)`, agentID, agentLogLimit-1)
-	if result.Error != nil {
-		return fmt.Errorf("trim agent logs: %w", result.Error)
+	var threshold agentLogRecord
+	err := r.db.WithContext(ctx).
+		Where("agent_id = ?", agentID).
+		Order("id DESC").
+		Offset(agentLogLimit - 1).
+		Limit(1).
+		Take(&threshold).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return fmt.Errorf("trim agent logs threshold: %w", err)
+	}
+
+	if err := r.db.WithContext(ctx).
+		Where("agent_id = ? AND id < ?", agentID, threshold.ID).
+		Delete(&agentLogRecord{}).Error; err != nil {
+		return fmt.Errorf("trim agent logs: %w", err)
 	}
 	return nil
 }

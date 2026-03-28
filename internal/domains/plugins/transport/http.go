@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/route"
@@ -14,35 +15,49 @@ import (
 	plugins "octomanger/internal/domains/plugins"
 	pluginapp "octomanger/internal/domains/plugins/app"
 	plugindomain "octomanger/internal/domains/plugins/domain"
-	"octomanger/internal/platform/auth"
 	"octomanger/internal/platform/httpx"
 )
 
-// ConfigStore is the subset of systemapp.Service used for plugin settings persistence.
-type ConfigStore interface {
-	GetConfig(ctx context.Context, key string) (json.RawMessage, error)
-	SetConfig(ctx context.Context, key string, value json.RawMessage) error
+type SettingsStore interface {
+	GetSettings(ctx context.Context, pluginKey string) (json.RawMessage, error)
+	SetSettings(ctx context.Context, pluginKey string, value json.RawMessage) error
+}
+
+type RuntimeConfigStore interface {
+	GetGRPCAddress(ctx context.Context, pluginKey string) (string, error)
+	SetGRPCAddress(ctx context.Context, pluginKey string, address string) error
 }
 
 type Handler struct {
-	adminKey     string
-	service      plugins.PluginService
-	accountTypes accounttypeapp.Service
-	configs      ConfigStore
+	service        plugins.PluginService
+	accountTypes   accounttypeapp.Service
+	settings       SettingsStore
+	runtimeConfigs RuntimeConfigStore
 }
 
-func NewHandler(adminKey string, service plugins.PluginService, accountTypes accounttypeapp.Service, configs ConfigStore) Handler {
-	return Handler{adminKey: adminKey, service: service, accountTypes: accountTypes, configs: configs}
+func NewHandler(
+	service plugins.PluginService,
+	accountTypes accounttypeapp.Service,
+	settings SettingsStore,
+	runtimeConfigs RuntimeConfigStore,
+) Handler {
+	return Handler{
+		service:        service,
+		accountTypes:   accountTypes,
+		settings:       settings,
+		runtimeConfigs: runtimeConfigs,
+	}
 }
 
 func (h Handler) Register(r *route.RouterGroup) {
-	guard := auth.RequireAdmin(h.adminKey)
 	r.GET("/plugins", h.list)
 	r.GET("/plugins/:key", h.get)
-	r.POST("/plugins/sync", guard, h.sync)
-	r.GET("/plugins/:key/settings", guard, h.getSettings)
-	r.PUT("/plugins/:key/settings", guard, h.putSettings)
-	r.POST("/plugins/:key/actions/:action", guard, h.executeAction)
+	r.POST("/plugins/sync", h.sync)
+	r.GET("/plugins/:key/runtime-config", h.getRuntimeConfig)
+	r.PUT("/plugins/:key/runtime-config", h.putRuntimeConfig)
+	r.GET("/plugins/:key/settings", h.getSettings)
+	r.PUT("/plugins/:key/settings", h.putSettings)
+	r.POST("/plugins/:key/actions/:action", h.executeAction)
 }
 
 func (h Handler) list(ctx context.Context, c *app.RequestContext) {
@@ -98,15 +113,76 @@ func (h Handler) sync(ctx context.Context, c *app.RequestContext) {
 	})
 }
 
-func (h Handler) getSettings(ctx context.Context, c *app.RequestContext) {
-	key := c.Param("key")
-
-	if _, err := h.service.Get(ctx, key); err != nil {
+func (h Handler) ensurePluginExists(ctx context.Context, c *app.RequestContext, key string) bool {
+	plugin, err := h.service.Get(ctx, key)
+	if err != nil {
 		httpx.NotFound(ctx, c, err.Error())
+		return false
+	}
+	if plugin == nil {
+		httpx.NotFound(ctx, c, "plugin not found")
+		return false
+	}
+	return true
+}
+
+func (h Handler) getRuntimeConfig(ctx context.Context, c *app.RequestContext) {
+	key := c.Param("key")
+	if !h.ensurePluginExists(ctx, c, key) {
 		return
 	}
 
-	raw, err := h.configs.GetConfig(ctx, settingsKey(key))
+	address, err := h.runtimeConfigs.GetGRPCAddress(ctx, key)
+	if err != nil {
+		httpx.InternalServerError(ctx, c, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, map[string]any{
+		"plugin_key":   key,
+		"grpc_address": address,
+	})
+}
+
+func (h Handler) putRuntimeConfig(ctx context.Context, c *app.RequestContext) {
+	key := c.Param("key")
+	if !h.ensurePluginExists(ctx, c, key) {
+		return
+	}
+
+	var req struct {
+		GRPCAddress string `json:"grpc_address"`
+	}
+	if err := httpx.DecodeJSON(c, &req); err != nil {
+		httpx.BadRequest(ctx, c, "invalid JSON body")
+		return
+	}
+
+	req.GRPCAddress = strings.TrimSpace(req.GRPCAddress)
+	if req.GRPCAddress == "" {
+		httpx.BadRequest(ctx, c, "grpc_address is required")
+		return
+	}
+
+	if err := h.runtimeConfigs.SetGRPCAddress(ctx, key, req.GRPCAddress); err != nil {
+		httpx.InternalServerError(ctx, c, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, map[string]any{
+		"plugin_key":   key,
+		"grpc_address": req.GRPCAddress,
+	})
+}
+
+func (h Handler) getSettings(ctx context.Context, c *app.RequestContext) {
+	key := c.Param("key")
+
+	if !h.ensurePluginExists(ctx, c, key) {
+		return
+	}
+
+	raw, err := h.settings.GetSettings(ctx, key)
 	if err != nil {
 		httpx.InternalServerError(ctx, c, err.Error())
 		return
@@ -131,8 +207,7 @@ func (h Handler) getSettings(ctx context.Context, c *app.RequestContext) {
 func (h Handler) putSettings(ctx context.Context, c *app.RequestContext) {
 	key := c.Param("key")
 
-	if _, err := h.service.Get(ctx, key); err != nil {
-		httpx.NotFound(ctx, c, err.Error())
+	if !h.ensurePluginExists(ctx, c, key) {
 		return
 	}
 
@@ -159,15 +234,11 @@ func (h Handler) putSettings(ctx context.Context, c *app.RequestContext) {
 		return
 	}
 
-	if err := h.configs.SetConfig(ctx, settingsKey(key), json.RawMessage(normalizedBody)); err != nil {
+	if err := h.settings.SetSettings(ctx, key, json.RawMessage(normalizedBody)); err != nil {
 		httpx.InternalServerError(ctx, c, err.Error())
 		return
 	}
 	c.JSON(http.StatusOK, map[string]any{"saved": true})
-}
-
-func settingsKey(pluginKey string) string {
-	return "plugin_settings:" + pluginKey
 }
 
 func (h Handler) executeAction(ctx context.Context, c *app.RequestContext) {
@@ -185,21 +256,28 @@ func (h Handler) executeAction(ctx context.Context, c *app.RequestContext) {
 	}
 
 	var payload struct {
-		Params map[string]any `json:"params"`
-		Spec   map[string]any `json:"spec"`
+		Params  map[string]any `json:"params"`
+		Spec    map[string]any `json:"spec"`
+		Account map[string]any `json:"account"`
 	}
 	if err := c.BindJSON(&payload); err != nil {
 		httpx.BadRequest(ctx, c, "invalid request body")
 		return
 	}
 
+	mode := "sync"
+	if payload.Account != nil {
+		mode = "account"
+	}
+
 	req := plugindomain.ExecutionRequest{
 		Action: action,
 		Input: map[string]any{
-			"params": payload.Params,
-			"spec":   payload.Spec,
+			"params":  payload.Params,
+			"spec":    payload.Spec,
+			"account": payload.Account,
 		},
-		Mode: "sync",
+		Mode: mode,
 	}
 
 	var result plugindomain.ExecutionEvent

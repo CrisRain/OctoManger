@@ -24,6 +24,10 @@ func (s Service) List(ctx context.Context) ([]emaildomain.Account, error) {
 	return s.repo.List(ctx)
 }
 
+func (s Service) ListPage(ctx context.Context, limit int, offset int) ([]emaildomain.Account, int64, error) {
+	return s.repo.ListPage(ctx, limit, offset)
+}
+
 func (s Service) Get(ctx context.Context, emailID int64) (*emaildomain.Account, error) {
 	return s.repo.Get(ctx, emailID)
 }
@@ -35,9 +39,7 @@ func (s Service) Create(ctx context.Context, input emaildomain.CreateInput) (*em
 	if strings.TrimSpace(input.Provider) == "" {
 		input.Provider = "outlook"
 	}
-	if input.Status == "" {
-		input.Status = "active"
-	}
+	input.Status = emaildomain.StatusPending
 	return s.repo.Create(ctx, input)
 }
 
@@ -45,6 +47,7 @@ func (s Service) Patch(ctx context.Context, emailID int64, input emaildomain.Pat
 	if emailID <= 0 {
 		return nil, fmt.Errorf("email account id is required")
 	}
+	input.Status = nil
 	return s.repo.Patch(ctx, emailID, input)
 }
 
@@ -102,7 +105,7 @@ func (s Service) importOutlookLine(ctx context.Context, line string) emaildomain
 	created, err := s.Create(ctx, emaildomain.CreateInput{
 		Address:  address,
 		Provider: "outlook",
-		Status:   "active",
+		Status:   emaildomain.StatusPending,
 		Config:   cfg,
 	})
 	if err != nil {
@@ -138,9 +141,13 @@ func (s Service) ExchangeOutlookCode(ctx context.Context, emailID int64, input e
 		return nil, err
 	}
 
-	return s.repo.Patch(ctx, emailID, emaildomain.PatchInput{
+	if _, err := s.repo.Patch(ctx, emailID, emaildomain.PatchInput{
 		Config: nextConfig.RawMap(),
-	})
+	}); err != nil {
+		return nil, err
+	}
+
+	return s.repo.UpdateStatus(ctx, emailID, emaildomain.StatusActive)
 }
 
 func (s Service) ListMailboxes(ctx context.Context, emailID int64, input emaildomain.ListMailboxesInput) (*emaildomain.ListMailboxesResult, error) {
@@ -391,6 +398,7 @@ func (s Service) loadGraphConfig(ctx context.Context, emailID int64) (*emaildoma
 
 	refreshedConfig, changed, err := config.EnsureAccessToken(ctx, account.Address)
 	if err != nil {
+		_, _ = s.repo.UpdateStatus(ctx, emailID, statusFromEmailAuthFailure(config))
 		return nil, outlook.GraphConfig{}, err
 	}
 	if changed {
@@ -405,9 +413,23 @@ func (s Service) loadGraphConfig(ctx context.Context, emailID int64) (*emaildoma
 
 	graphConfig, err := config.GraphConfig()
 	if err != nil {
+		_, _ = s.repo.UpdateStatus(ctx, emailID, statusFromEmailAuthFailure(config))
 		return nil, outlook.GraphConfig{}, err
 	}
+	if strings.TrimSpace(account.Status) != emaildomain.StatusActive {
+		account, err = s.repo.UpdateStatus(ctx, emailID, emaildomain.StatusActive)
+		if err != nil {
+			return nil, outlook.GraphConfig{}, err
+		}
+	}
 	return account, graphConfig, nil
+}
+
+func statusFromEmailAuthFailure(config outlook.AccountConfig) string {
+	if strings.TrimSpace(config.RefreshToken) == "" && strings.TrimSpace(config.AccessToken) == "" {
+		return emaildomain.StatusPending
+	}
+	return emaildomain.StatusInactive
 }
 
 func buildPreviewGraphConfig(ctx context.Context, raw map[string]any) (outlook.GraphConfig, outlook.AccountConfig, error) {

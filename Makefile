@@ -9,7 +9,7 @@ PROTOC_GO     ?= $(shell which protoc-gen-go 2>/dev/null || echo ~/go/bin/protoc
 PROTOC_GO_GRPC ?= $(shell which protoc-gen-go-grpc 2>/dev/null || echo ~/go/bin/protoc-gen-go-grpc)
 PYTHON        ?= python3
 
-.PHONY: help proto-gen proto-gen-go proto-gen-python build test lint
+.PHONY: help proto-gen proto-gen-go proto-gen-python build build-web-assets test lint
 
 ## ── help ─────────────────────────────────────────────────────────────────────
 
@@ -51,8 +51,11 @@ proto-gen-python: ## Generate Python stubs from proto/plugin/v1/plugin.proto
 
 ## ── build / test ─────────────────────────────────────────────────────────────
 
-build: ## Build all Go binaries
-	go build ./apps/api ./apps/worker ./apps/migrate
+build-web-assets: ## Build the frontend and sync embedded assets
+	./scripts/prepare-webui.sh
+
+build: build-web-assets ## Build the unified binary with embedded web assets
+	go build -o bin/octomanger ./apps/octomanger
 
 test: ## Run all Go tests
 	go test ./...

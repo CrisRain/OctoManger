@@ -38,6 +38,8 @@ export type AppRouteRecord = RouteRecordRaw & {
 
 export const routeNames = {
   oauthCallback: "oauth.callback",
+  auth: "auth",
+  setup: "setup",
   dashboard: "dashboard",
 
   agentsList: "agents.list",
@@ -82,6 +84,8 @@ export type RouteName = (typeof routeNames)[keyof typeof routeNames];
 
 export const PATHS = {
   oauthCallback: "/oauth/callback",
+  auth: "/auth",
+  setup: "/setup",
   dashboard: "/dashboard",
 
   agents: {
@@ -138,6 +142,8 @@ const encodeParam = (value: string | number) => encodeURIComponent(String(value)
 
 export const to = {
   oauthCallback: () => PATHS.oauthCallback,
+  auth: () => PATHS.auth,
+  setup: () => PATHS.setup,
   dashboard: () => PATHS.dashboard,
 
   agents: {

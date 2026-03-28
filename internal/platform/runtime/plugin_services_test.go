@@ -2,7 +2,7 @@ package runtime
 
 import (
 	"context"
-	"encoding/json"
+	"fmt"
 	"testing"
 
 	"octomanger/internal/platform/config"
@@ -10,7 +10,7 @@ import (
 
 func TestResolvePluginServicesInitializesDefaultsIntoStore(t *testing.T) {
 	store := &stubPluginConfigStore{
-		values: map[string]json.RawMessage{},
+		values: map[string]string{},
 	}
 
 	services, err := resolvePluginServices(context.Background(), store, map[string]config.PluginServiceEntry{
@@ -24,18 +24,15 @@ func TestResolvePluginServicesInitializesDefaultsIntoStore(t *testing.T) {
 		t.Fatalf("unexpected resolved address %q", services["octo_demo"].Address)
 	}
 
-	saved := store.values[pluginGRPCServicesConfigKey]
-	if len(saved) == 0 {
+	if store.values["octo_demo"] != "127.0.0.1:50051" {
 		t.Fatalf("expected plugin services config to be initialized in store")
 	}
 }
 
 func TestResolvePluginServicesUsesDatabaseValueAndBackfillsMissingDefaults(t *testing.T) {
 	store := &stubPluginConfigStore{
-		values: map[string]json.RawMessage{
-			pluginGRPCServicesConfigKey: json.RawMessage(`{
-				"octo_demo": {"address": "127.0.0.1:60051"}
-			}`),
+		values: map[string]string{
+			"octo_demo": "127.0.0.1:60051",
 		},
 	}
 
@@ -55,21 +52,41 @@ func TestResolvePluginServicesUsesDatabaseValueAndBackfillsMissingDefaults(t *te
 	}
 }
 
+func TestResolvePluginServicesErrorFromStore(t *testing.T) {
+	store := &errorPluginConfigStore{}
+	if _, err := resolvePluginServices(context.Background(), store, map[string]config.PluginServiceEntry{}); err == nil {
+		t.Fatalf("expected error when store fails")
+	}
+}
+
 type stubPluginConfigStore struct {
-	values map[string]json.RawMessage
+	values map[string]string
 }
 
-func (s *stubPluginConfigStore) GetConfig(ctx context.Context, key string) (json.RawMessage, error) {
-	if value, ok := s.values[key]; ok {
-		return value, nil
+type errorPluginConfigStore struct{}
+
+func (e *errorPluginConfigStore) ListGRPCAddresses(ctx context.Context) (map[string]string, error) {
+	return nil, fmt.Errorf("boom")
+}
+
+func (e *errorPluginConfigStore) SetGRPCAddress(ctx context.Context, key string, address string) error {
+	return nil
+}
+
+func (s *stubPluginConfigStore) ListGRPCAddresses(ctx context.Context) (map[string]string, error) {
+	_ = ctx
+	out := make(map[string]string, len(s.values))
+	for key, value := range s.values {
+		out[key] = value
 	}
-	return json.RawMessage(`{}`), nil
+	return out, nil
 }
 
-func (s *stubPluginConfigStore) SetConfig(ctx context.Context, key string, value json.RawMessage) error {
+func (s *stubPluginConfigStore) SetGRPCAddress(ctx context.Context, key string, address string) error {
+	_ = ctx
 	if s.values == nil {
-		s.values = map[string]json.RawMessage{}
+		s.values = map[string]string{}
 	}
-	s.values[key] = append(json.RawMessage(nil), value...)
+	s.values[key] = address
 	return nil
 }

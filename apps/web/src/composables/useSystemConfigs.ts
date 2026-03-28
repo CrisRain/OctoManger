@@ -1,64 +1,103 @@
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { useConfigStore } from "@/store";
-import type { SetConfigRequestBody, SystemConfigValue } from "@/types";
+import type { SystemConfig } from "@/types";
 
-const KNOWN_CONFIGS = [
-  { key: "app.name", label: "应用名称", description: "平台显示名称" },
-  { key: "job.default_timeout_minutes", label: "任务超时（分钟）", description: "默认任务执行超时" },
-  { key: "job.max_concurrency", label: "最大并发数", description: "Worker 最大并发任务数" },
-  { key: "plugins.grpc_services", label: "插件 gRPC 服务", description: "插件键到 gRPC 地址的 JSON 映射，启动时会自动初始化默认值" },
-] as const;
+export interface SystemConfigForm {
+  appName: string;
+  jobDefaultTimeoutMinutes: number;
+  jobMaxConcurrency: number;
+}
 
-export type KnownConfigItem = (typeof KNOWN_CONFIGS)[number];
+const DEFAULT_CONFIG: SystemConfigForm = {
+  appName: "OctoManager",
+  jobDefaultTimeoutMinutes: 30,
+  jobMaxConcurrency: 10,
+};
+
+function toForm(value?: Partial<SystemConfig> | null): SystemConfigForm {
+  return {
+    appName: typeof value?.app_name === "string" && value.app_name.trim()
+      ? value.app_name.trim()
+      : DEFAULT_CONFIG.appName,
+    jobDefaultTimeoutMinutes: typeof value?.job_default_timeout_minutes === "number"
+      ? value.job_default_timeout_minutes
+      : DEFAULT_CONFIG.jobDefaultTimeoutMinutes,
+    jobMaxConcurrency: typeof value?.job_max_concurrency === "number"
+      ? value.job_max_concurrency
+      : DEFAULT_CONFIG.jobMaxConcurrency,
+  };
+}
+
+function toPayload(value: SystemConfigForm): SystemConfig {
+  return {
+    app_name: value.appName.trim(),
+    job_default_timeout_minutes: value.jobDefaultTimeoutMinutes,
+    job_max_concurrency: value.jobMaxConcurrency,
+  };
+}
+
+function cloneForm(value: SystemConfigForm): SystemConfigForm {
+  return {
+    appName: value.appName,
+    jobDefaultTimeoutMinutes: value.jobDefaultTimeoutMinutes,
+    jobMaxConcurrency: value.jobMaxConcurrency,
+  };
+}
+
+function sameForm(left: SystemConfigForm, right: SystemConfigForm): boolean {
+  return left.appName === right.appName
+    && left.jobDefaultTimeoutMinutes === right.jobDefaultTimeoutMinutes
+    && left.jobMaxConcurrency === right.jobMaxConcurrency;
+}
 
 export function useSystemConfigs() {
   const store = useConfigStore();
-  const configs = ref<Record<string, string>>({});
-  const configEdits = ref<Record<string, string>>({});
-  const configSaving = ref<Record<string, boolean>>({});
+  const config = ref<SystemConfigForm>(cloneForm(DEFAULT_CONFIG));
+  const savedConfig = ref<SystemConfigForm>(cloneForm(DEFAULT_CONFIG));
+  const configLoading = ref(false);
+  const configSaving = ref(false);
+
+  const isConfigDirty = computed(() => !sameForm(config.value, savedConfig.value));
 
   async function loadConfigs() {
-    const values: Record<string, string> = {};
-    for (const config of KNOWN_CONFIGS) {
-      try {
-        const res = await store.fetchConfig(config.key);
-        values[config.key] = JSON.stringify(res?.value ?? "");
-      } catch {
-        values[config.key] = "";
-      }
+    configLoading.value = true;
+    try {
+      const result = await store.fetchConfig();
+      const next = toForm(result);
+      config.value = cloneForm(next);
+      savedConfig.value = cloneForm(next);
+    } finally {
+      configLoading.value = false;
     }
-    configs.value = { ...values };
-    configEdits.value = { ...values };
   }
 
-  async function saveConfig(key: string): Promise<SystemConfigValue> {
-    const raw = configEdits.value[key] ?? "";
-    let parsed: SetConfigRequestBody["value"];
+  async function saveConfig() {
+    configSaving.value = true;
     try {
-      parsed = JSON.parse(raw) as SetConfigRequestBody["value"];
-    } catch {
-      throw new Error(`${key}: 值必须是有效 JSON`);
-    }
-
-    configSaving.value = { ...configSaving.value, [key]: true };
-    try {
-      const result = await store.updateConfig(key, parsed);
+      const result = await store.saveConfig(toPayload(config.value));
       if (!result) {
-        throw new Error("保存失败");
+        throw new Error(store.error ?? "保存失败");
       }
-      configs.value = { ...configs.value, [key]: raw };
+      const next = toForm(result);
+      config.value = cloneForm(next);
+      savedConfig.value = cloneForm(next);
       return result;
     } finally {
-      configSaving.value = { ...configSaving.value, [key]: false };
+      configSaving.value = false;
     }
+  }
+
+  function resetConfig() {
+    config.value = cloneForm(savedConfig.value);
   }
 
   return {
-    knownConfigs: KNOWN_CONFIGS,
-    configs,
-    configEdits,
+    config,
+    configLoading,
     configSaving,
+    isConfigDirty,
     loadConfigs,
     saveConfig,
+    resetConfig,
   };
 }

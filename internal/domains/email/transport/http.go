@@ -12,44 +12,49 @@ import (
 	emailapp "octomanger/internal/domains/email/app"
 	emaildomain "octomanger/internal/domains/email/domain"
 	emailpostgres "octomanger/internal/domains/email/infra/postgres"
-	"octomanger/internal/platform/auth"
 	"octomanger/internal/platform/httpx"
 )
 
 type Handler struct {
-	adminKey string
-	service  emailapp.Service
+	service emailapp.Service
 }
 
-func NewHandler(adminKey string, service emailapp.Service) Handler {
-	return Handler{adminKey: adminKey, service: service}
+func NewHandler(service emailapp.Service) Handler {
+	return Handler{service: service}
 }
 
 func (h Handler) Register(r *route.RouterGroup) {
-	guard := auth.RequireAdmin(h.adminKey)
-	r.GET("/email/accounts", guard, h.list)
-	r.POST("/email/accounts/bulk-import", guard, h.bulkImport)
-	r.POST("/email/accounts", guard, h.create)
-	r.GET("/email/accounts/:id", guard, h.get)
-	r.PATCH("/email/accounts/:id", guard, h.patch)
-	r.DELETE("/email/accounts/:id", guard, h.delete)
-	r.POST("/email/accounts/:id/outlook/authorize-url", guard, h.buildAuthorizeURL)
-	r.POST("/email/accounts/:id/outlook/exchange-code", guard, h.exchangeOutlookCode)
-	r.GET("/email/accounts/:id/mailboxes", guard, h.listMailboxes)
-	r.GET("/email/accounts/:id/messages", guard, h.listMessages)
-	r.GET("/email/accounts/:id/messages/latest", guard, h.getLatestMessage)
-	r.GET("/email/accounts/:id/messages/:message_id", guard, h.getMessage)
-	r.POST("/email/preview/mailboxes", guard, h.previewMailboxes)
-	r.POST("/email/preview/messages/latest", guard, h.previewLatestMessage)
+	r.GET("/email/accounts", h.list)
+	r.POST("/email/accounts/bulk-import", h.bulkImport)
+	r.POST("/email/accounts", h.create)
+	r.GET("/email/accounts/:id", h.get)
+	r.PATCH("/email/accounts/:id", h.patch)
+	r.DELETE("/email/accounts/:id", h.delete)
+	r.POST("/email/accounts/:id/outlook/authorize-url", h.buildAuthorizeURL)
+	r.POST("/email/accounts/:id/outlook/exchange-code", h.exchangeOutlookCode)
+	r.GET("/email/accounts/:id/mailboxes", h.listMailboxes)
+	r.GET("/email/accounts/:id/messages", h.listMessages)
+	r.GET("/email/accounts/:id/messages/latest", h.getLatestMessage)
+	r.GET("/email/accounts/:id/messages/:message_id", h.getMessage)
+	r.POST("/email/preview/mailboxes", h.previewMailboxes)
+	r.POST("/email/preview/messages/latest", h.previewLatestMessage)
 }
 
 func (h Handler) list(ctx context.Context, c *app.RequestContext) {
-	items, err := h.service.List(ctx)
+	page, err := httpx.ParsePageRequest(c)
+	if err != nil {
+		httpx.BadRequest(ctx, c, err.Error())
+		return
+	}
+	items, total, err := h.service.ListPage(ctx, page.Limit, page.Offset)
 	if err != nil {
 		httpx.InternalServerError(ctx, c, err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, map[string]any{"items": items})
+	c.JSON(http.StatusOK, map[string]any{
+		"items":      items,
+		"pagination": httpx.BuildPageMeta(page, total),
+	})
 }
 
 func (h Handler) get(ctx context.Context, c *app.RequestContext) {

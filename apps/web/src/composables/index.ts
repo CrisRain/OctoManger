@@ -13,7 +13,7 @@ export * from "./useErrorHandler";
 export * from "./useConfirm";
 
 // 原有composables
-export { useSystemStatus, useDashboardSnapshot, type DashboardSummary } from "./useDashboard";
+export { useSystemStatus, useDashboardSnapshot, useSystemLogs, type DashboardSummary } from "./useDashboard";
 export { useAccountTypes } from "./useAccountTypes";
 export { useAccounts } from "./useAccounts";
 export { useAgents } from "./useAgents";

@@ -5,10 +5,10 @@
  */
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { IconUser, IconCheck, IconSync, IconStop, IconPlayArrow } from "@/lib/icons";
+import { IconUser } from "@/lib/icons";
 
 import { useAccountTypes } from "@/composables/useAccountTypes";
-import { useAccounts, usePatchAccount, useDeleteAccount } from "@/composables/useAccounts";
+import { useAccounts, useDeleteAccount } from "@/composables/useAccounts";
 import { useMessage, useConfirm, useErrorHandler } from "@/composables";
 import { to } from "@/router/registry";
 
@@ -22,7 +22,6 @@ const { withErrorHandler } = useErrorHandler();
 const { data: types, loading: loadingTypes } = useAccountTypes();
 const { data: accounts, loading: loadingAccounts, error: accountsError, refresh } = useAccounts();
 watch(accounts, () => { selectedKeys.value = []; });
-const patchAccount = usePatchAccount();
 const deleteAccountOp = useDeleteAccount();
 
 const selectedKeys = ref<string[]>([]);
@@ -35,7 +34,7 @@ const statusOptions = [
   { label: "全部", value: "" },
   { label: "活跃", value: "active" },
   { label: "停用", value: "inactive" },
-  { label: "待定", value: "pending" },
+  { label: "待验证", value: "pending" },
 ];
 
 function normalizeFilterValue(value: string | undefined) {
@@ -94,13 +93,6 @@ const filteredAccounts = computed(() => {
   return result;
 });
 
-// 状态配置
-const statusConfig: Record<string, { label: string; color: string; icon?: any }> = {
-  active: { label: "活跃", color: "green", icon: IconCheck },
-  inactive: { label: "停用", color: "gray", icon: IconStop },
-  pending: { label: "待定", color: "orange", icon: IconSync },
-};
-
 // 快速操作
 async function handleQuickAction(key: string, account: any) {
   switch (key) {
@@ -110,9 +102,6 @@ async function handleQuickAction(key: string, account: any) {
     case "edit":
       router.push(to.accounts.edit(account.id));
       break;
-    case "toggle":
-      await toggleAccountStatus(account);
-      break;
     case "delete":
       await deleteAccount(account);
       break;
@@ -120,26 +109,6 @@ async function handleQuickAction(key: string, account: any) {
       await copyToClipboard(String(account.id));
       break;
   }
-}
-
-// 切换账号状态
-async function toggleAccountStatus(account: any) {
-  const newStatus = account.status === "active" ? "inactive" : "active";
-  const action = newStatus === "active" ? "启用" : "停用";
-
-  const confirmed = await confirm.confirm(
-    `确定要${action}账号 "${account.identifier}" 吗？`
-  );
-
-  if (!confirmed) return;
-
-  await withErrorHandler(
-    async () => {
-      await patchAccount.execute(account.id, { status: newStatus });
-      await refresh();
-    },
-    { action, showSuccess: true }
-  );
 }
 
 // 删除账号
@@ -195,28 +164,13 @@ async function handleBatchExport(items: any[]) {
   message.success(`已导出 ${items.length} 个账号`);
 }
 
-// 批量启用/停用
-async function handleBatchToggle(selectedItems: any[], enable: boolean) {
-  const action = enable ? "启用" : "停用";
-  const confirmed = await confirm.confirm(`确定要${action}选中的 ${selectedItems.length} 个账号吗？`);
-  if (!confirmed) return;
-
-  await withErrorHandler(
-    async () => {
-      const newStatus = enable ? "active" : "inactive";
-      await Promise.all(selectedItems.map((item) => patchAccount.execute(item.id, { status: newStatus })));
-      await refresh();
-    },
-    { action: `批量${action}`, showSuccess: true }
-  );
-}
 </script>
 
 <template>
   <div class="page-shell accounts-list-page">
     <PageHeader
       :title="currentType?.name || '账号管理'"
-      :subtitle="((currentType?.schema as Record<string, unknown> | undefined)?.description as string | undefined) || '集中管理各类型账号，支持按类型筛选和批量操作'"
+      :subtitle="((currentType?.schema as Record<string, unknown> | undefined)?.description as string | undefined) || '集中管理各类型账号，状态会根据验证结果自动更新'"
       icon-bg="var(--accent-light)"
       icon-color="var(--accent)"
     >
@@ -358,7 +312,6 @@ async function handleBatchToggle(selectedItems: any[], enable: boolean) {
                 :actions="[
                   { key: 'view', label: '查看详情', icon: 'IconEye' },
                   { key: 'edit', label: '编辑', icon: 'IconEdit' },
-                  { key: 'toggle', label: record.status === 'active' ? '停用' : '启用', icon: record.status === 'active' ? 'IconStop' : 'IconPlayArrow' },
                   { key: 'copy', label: '复制ID', icon: 'IconCopy' },
                   { key: 'delete-divider', divider: true },
                   { key: 'delete', label: '删除', icon: 'IconDelete', danger: true },
@@ -405,7 +358,6 @@ async function handleBatchToggle(selectedItems: any[], enable: boolean) {
             :actions="[
               { key: 'view', label: '查看详情', icon: 'IconEye' },
               { key: 'edit', label: '编辑', icon: 'IconEdit' },
-              { key: 'toggle', label: record.status === 'active' ? '停用' : '启用', icon: record.status === 'active' ? 'IconStop' : 'IconPlayArrow' },
               { key: 'copy', label: '复制ID', icon: 'IconCopy' },
               { key: 'delete-divider', divider: true },
               { key: 'delete', label: '删除', icon: 'IconDelete', danger: true },

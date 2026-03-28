@@ -2,6 +2,12 @@ package emaildomain
 
 import "time"
 
+const (
+	StatusPending  = "pending"
+	StatusActive   = "active"
+	StatusInactive = "inactive"
+)
+
 type Account struct {
 	ID        int64          `json:"id"`
 	Address   string         `json:"address"`
@@ -102,11 +108,11 @@ type BulkImportInput struct {
 }
 
 type BulkImportLineResult struct {
-	Line    string  `json:"line"`
-	Address string  `json:"address,omitempty"`
-	OK      bool    `json:"ok"`
-	Error   string  `json:"error,omitempty"`
-	ID      *int64  `json:"id,omitempty"`
+	Line    string `json:"line"`
+	Address string `json:"address,omitempty"`
+	OK      bool   `json:"ok"`
+	Error   string `json:"error,omitempty"`
+	ID      *int64 `json:"id,omitempty"`
 }
 
 type BulkImportResult struct {

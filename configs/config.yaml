@@ -1,41 +1,56 @@
+app:
+  env: development
+
 server:
-  port: "8080"
-  mode: "release"
-  web_dist_dir: ""
+  api_addr: ":8080"
+  read_timeout: 15s
+  idle_timeout: 60s
+  cors:
+    allowed_origins: []
+    allowed_methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+    allowed_headers: ["Authorization", "Content-Type", "X-Admin-Key", "X-Api-Key", "X-Trigger-Token"]
+    max_age: 10m
 
 database:
   dsn: ""
-  url: ""
-  max_open_conns: 0
-  max_idle_conns: 0
-  conn_max_lifetime_sec: 0
-  conn_max_idle_time_sec: 0
-  auto_migrate: true
-  reset: false
+  migration_mode: "versioned"
+  max_connections: 8
+  connect_timeout: 5s
+  query_timeout: 10s
+  healthcheck_grace: 250ms
 
 redis:
   addr: "127.0.0.1:6379"
   password: ""
   db: 0
 
-asynq:
-  redis_addr: ""
-  concurrency: 10
+auth:
+  admin_key: ""
+  admin_keys: ""
+  plugin_internal_api_token: ""
 
-python:
-  bin: "python"
-  script: ""
-  timeout_seconds: 0
+worker:
+  poll_interval: 2s
+  agent_scan_interval: 3s
+  agent_loop_interval: 10s
+  agent_error_backoff: 15s
+  schedule_poll_limit: 10
+  execution_poll_limit: 10
 
-octomodule_service:
-  url: "http://127.0.0.1:8091"
-  listen: ":8091"
-  token: ""
-  embedded: true
+plugins:
+  python_bin: "python3"
+  modules_dir: "plugins/modules"
+  sdk_dir: "plugins/sdk/python"
+  timeout:
+    account: 60s
+    job: 10m
+    agent: 0s
+  grpc:
+    allow_insecure_remote: false
+    insecure_skip_verify: false
 
 logging:
-  file: "logs/octomanger.log"
   level: "info"
-
-paths:
+  format: "text"
+  filename: ""
   octo_module_dir: "../scripts/python/modules"

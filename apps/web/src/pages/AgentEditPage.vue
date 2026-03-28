@@ -1,17 +1,14 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { IconEdit } from "@/lib/icons";
 
 import { FormActionBar, FormPageLayout, PageHeader, SmartForm } from "@/components/index";
 import { useAgent, usePatchAgent } from "@/composables/useAgents";
-import { useAccounts, useMessage, useErrorHandler } from "@/composables";
-import type { Account } from "@/types";
+import { useMessage, useErrorHandler } from "@/composables";
 import type { FieldConfig } from "@/components/smart-form.types";
 import { to } from "@/router/registry";
 import {
   buildAgentInput,
-  formatAccountOptionLabel,
   parseAgentParamsJSON,
   splitAgentInput,
   stringifyAgentParams,
@@ -25,54 +22,20 @@ const message = useMessage();
 const { withErrorHandler } = useErrorHandler();
 const { data: agent, loading } = useAgent(agentId);
 const patch = usePatchAgent();
-const { data: accounts } = useAccounts();
 
 const formRef = ref<InstanceType<typeof SmartForm>>();
 
 const formData = ref({
   name: "",
-  account_id: "",
   params_json: "{}",
 });
 
 watch(agent, (a) => {
   if (!a) return;
-  const { accountId, params } = splitAgentInput(a.input);
+  const { params } = splitAgentInput(a.input);
   formData.value.name = a.name;
-  formData.value.account_id = accountId;
   formData.value.params_json = stringifyAgentParams(params);
 }, { immediate: true });
-
-const filteredAccounts = computed(() =>
-  accounts.value.filter((account) => {
-    if (!agent.value?.plugin_key) {
-      return true;
-    }
-    return account.account_type_key === agent.value.plugin_key;
-  }),
-);
-
-const accountOptions = computed(() => {
-  const options = filteredAccounts.value.map((account) => ({
-    label: formatAccountOptionLabel(account),
-    value: String(account.id),
-  }));
-
-  if (formData.value.account_id && !options.some((option) => option.value === formData.value.account_id)) {
-    options.unshift({
-      label: `当前已保存账号 #${formData.value.account_id}（账号库中未找到）`,
-      value: formData.value.account_id,
-    });
-  }
-
-  return options;
-});
-
-const selectedAccount = computed<Account | null>(() =>
-  filteredAccounts.value.find((account) => String(account.id) === formData.value.account_id)
-  ?? accounts.value.find((account) => String(account.id) === formData.value.account_id)
-  ?? null,
-);
 
 const formFields = computed<FieldConfig[]>(() => [
   {
@@ -84,19 +47,11 @@ const formFields = computed<FieldConfig[]>(() => [
     description: "Agent 的显示名称",
   },
   {
-    name: "account_id",
-    label: "关联账号",
-    type: "select",
-    placeholder: accountOptions.value.length ? "从账号库中选择一个账号" : "当前插件下暂无账号",
-    description: "保存后会覆盖 input.account",
-    options: accountOptions.value,
-  },
-  {
     name: "params_json",
     label: "动作参数 (JSON)",
     type: "textarea",
     placeholder: '{"interval_seconds":60}',
-    description: "将写入 input.params，必须是 JSON 对象",
+    description: "仅写入 input.params；账号获取与其他插件内逻辑由插件代码自行处理",
     rows: 6,
   },
 ]);
@@ -119,7 +74,7 @@ async function handleSave() {
     async () => {
       await patch.execute(agentId, {
         name: formData.value.name.trim(),
-        input: buildAgentInput(selectedAccount.value, params),
+        input: buildAgentInput(params),
       });
       message.success("Agent 已更新");
       router.push(to.agents.detail(agentId));

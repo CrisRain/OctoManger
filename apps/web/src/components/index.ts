@@ -26,3 +26,4 @@ export { default as RowActionsMenu } from "./RowActionsMenu.vue";
 export { default as SmartForm } from "./SmartForm.vue";
 export { default as FormActionBar } from "./FormActionBar.vue";
 export { default as FormPageLayout } from "./FormPageLayout.vue";
+export { default as PluginUIButtonForm } from "./PluginUIButtonForm.vue";

@@ -15,10 +15,6 @@ export function parseTriggerDefaultInput(raw: string): JsonRecord {
   return parsed as JsonRecord;
 }
 
-export function stringifyTriggerDefaultInput(input: Record<string, unknown> | null | undefined): string {
-  return JSON.stringify(input ?? {}, null, 2);
-}
-
 export function formatJobDefinitionOptionLabel(job: JobDefinition): string {
   const meta = [job.key, `${job.plugin_key}:${job.action}`].filter(Boolean).join(" · ");
   return meta ? `${job.name} (#${job.id}) · ${meta}` : `${job.name} (#${job.id})`;

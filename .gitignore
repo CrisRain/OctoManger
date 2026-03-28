@@ -4,9 +4,7 @@
 
 # 编译产物
 bin/
-/api
-/worker
-/migrate
+/octomanger
 *.exe
 *.exe~
 *.dll
@@ -95,6 +93,8 @@ apps/web/test-*.cjs
 apps/web/test-*.mjs
 apps/web/test-*.ts
 apps/web/test-*.tsx
+internal/platform/webui/dist/*
+!internal/platform/webui/dist/.keep
 
 # ============================================================
 # 配置 / 环境变量

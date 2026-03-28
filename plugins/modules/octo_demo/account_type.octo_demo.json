@@ -8,17 +8,17 @@
       "username": {
         "type": "string",
         "title": "用户名",
-        "description": "fake_server 中的用户名"
+        "description": "内置演示服务中的用户名"
       },
       "api_key": {
         "type": "string",
         "title": "API Key",
-        "description": "fake_server 返回的 API 密钥"
+        "description": "内置演示服务返回的 API 密钥"
       },
       "base_url": {
         "type": "string",
         "title": "服务地址",
-        "description": "fake_server 监听地址，例如 http://127.0.0.1:18080",
+        "description": "内置演示服务监听地址，例如 http://127.0.0.1:18080",
         "default": "http://127.0.0.1:18080"
       }
     },
@@ -44,28 +44,47 @@
           {
             "name": "status",
             "type": "string",
+            "label": "任务状态",
             "required": false,
-            "description": "状态过滤"
+            "description": "状态过滤",
+            "placeholder": "",
+            "account_type_key": "",
+            "bind": ""
           },
           {
             "name": "priority",
             "type": "string",
+            "label": "优先级",
             "required": false,
-            "description": "优先级过滤"
+            "description": "优先级过滤",
+            "placeholder": "",
+            "account_type_key": "",
+            "bind": ""
           },
           {
             "name": "page",
-            "type": "string",
-            "default": "1",
+            "type": "integer",
+            "label": "页码",
+            "default": 1,
             "required": false,
-            "description": "页码"
+            "description": "页码",
+            "placeholder": "",
+            "min": 1,
+            "account_type_key": "",
+            "bind": ""
           },
           {
             "name": "page_size",
-            "type": "string",
-            "default": "20",
+            "type": "integer",
+            "label": "每页条数",
+            "default": 20,
             "required": false,
-            "description": "每页条数"
+            "description": "每页条数",
+            "placeholder": "",
+            "min": 1,
+            "max": 50,
+            "account_type_key": "",
+            "bind": ""
           }
         ]
       },
@@ -76,12 +95,17 @@
           {
             "name": "title",
             "type": "string",
+            "label": "任务标题",
             "required": true,
-            "description": "任务标题"
+            "description": "任务标题",
+            "placeholder": "",
+            "account_type_key": "",
+            "bind": ""
           },
           {
             "name": "priority",
             "type": "string",
+            "label": "优先级",
             "default": "medium",
             "required": false,
             "choices": [
@@ -90,7 +114,10 @@
               "high",
               "critical"
             ],
-            "description": "优先级"
+            "description": "优先级",
+            "placeholder": "",
+            "account_type_key": "",
+            "bind": ""
           }
         ]
       },
@@ -101,8 +128,12 @@
           {
             "name": "task_id",
             "type": "string",
+            "label": "任务 ID",
             "required": true,
-            "description": "任务 ID"
+            "description": "任务 ID",
+            "placeholder": "",
+            "account_type_key": "",
+            "bind": ""
           }
         ]
       },
@@ -113,8 +144,12 @@
           {
             "name": "task_id",
             "type": "string",
+            "label": "任务 ID",
             "required": true,
-            "description": "任务 ID"
+            "description": "任务 ID",
+            "placeholder": "",
+            "account_type_key": "",
+            "bind": ""
           }
         ]
       },
@@ -125,10 +160,18 @@
           {
             "name": "display_name",
             "type": "string",
+            "label": "显示名称",
             "required": false,
-            "description": "显示名称"
+            "description": "显示名称",
+            "placeholder": "",
+            "account_type_key": "",
+            "bind": ""
           }
         ]
+      },
+      {
+        "key": "AGENT_FAKE_SERVER",
+        "description": "Agent 模式：启动并保活插件内置演示服务"
       },
       {
         "key": "AGENT_MONITOR",
@@ -161,7 +204,7 @@
       "type": "string",
       "secret": false,
       "default": "60",
-      "description": "仅用于文档说明；实际间隔由 Worker 的 WORKER_AGENT_LOOP_INTERVAL 控制",
+      "description": "用于估算内置演示服务租约；实际循环间隔仍由 Worker 的 WORKER_AGENT_LOOP_INTERVAL 控制",
       "required": false
     }
   ],
@@ -214,6 +257,7 @@
                   {
                     "name": "status",
                     "type": "string",
+                    "label": "任务状态",
                     "required": false,
                     "choices": [
                       "",
@@ -222,11 +266,15 @@
                       "completed",
                       "cancelled"
                     ],
-                    "description": "按状态过滤（留空=全部）"
+                    "description": "按状态过滤（留空=全部）",
+                    "placeholder": "",
+                    "account_type_key": "",
+                    "bind": ""
                   },
                   {
                     "name": "priority",
                     "type": "string",
+                    "label": "优先级",
                     "required": false,
                     "choices": [
                       "",
@@ -235,14 +283,22 @@
                       "high",
                       "critical"
                     ],
-                    "description": "按优先级过滤（留空=全部）"
+                    "description": "按优先级过滤（留空=全部）",
+                    "placeholder": "",
+                    "account_type_key": "",
+                    "bind": ""
                   },
                   {
                     "name": "page",
-                    "type": "string",
-                    "default": "1",
+                    "type": "integer",
+                    "label": "页码",
+                    "default": 1,
                     "required": false,
-                    "description": "页码"
+                    "description": "页码",
+                    "placeholder": "",
+                    "min": 1,
+                    "account_type_key": "",
+                    "bind": ""
                   }
                 ]
               }
@@ -262,12 +318,17 @@
                   {
                     "name": "title",
                     "type": "string",
+                    "label": "任务标题",
                     "required": true,
-                    "description": "任务标题"
+                    "description": "任务标题",
+                    "placeholder": "例如：跟进客户消息",
+                    "account_type_key": "",
+                    "bind": ""
                   },
                   {
                     "name": "priority",
                     "type": "string",
+                    "label": "优先级",
                     "default": "medium",
                     "required": false,
                     "choices": [
@@ -276,7 +337,10 @@
                       "high",
                       "critical"
                     ],
-                    "description": "优先级"
+                    "description": "优先级",
+                    "placeholder": "",
+                    "account_type_key": "",
+                    "bind": ""
                   }
                 ]
               }
@@ -296,8 +360,12 @@
                   {
                     "name": "task_id",
                     "type": "string",
+                    "label": "任务 ID",
                     "required": true,
-                    "description": "任务 ID（从查询结果中复制）"
+                    "description": "任务 ID（从查询结果中复制）",
+                    "placeholder": "",
+                    "account_type_key": "",
+                    "bind": ""
                   }
                 ]
               },
@@ -311,8 +379,12 @@
                   {
                     "name": "task_id",
                     "type": "string",
+                    "label": "任务 ID",
                     "required": true,
-                    "description": "任务 ID"
+                    "description": "任务 ID",
+                    "placeholder": "",
+                    "account_type_key": "",
+                    "bind": ""
                   }
                 ]
               }
@@ -320,6 +392,81 @@
           }
         ],
         "context": ""
+      },
+      {
+        "key": "demo_server",
+        "label": "演示服务",
+        "sections": [
+          {
+            "title": "插件主进程内置服务",
+            "fields": [],
+            "buttons": [
+              {
+                "action": "AGENT_FAKE_SERVER",
+                "label": "启动并保活演示服务",
+                "variant": "outline",
+                "mode": "agent",
+                "params": {},
+                "form": [
+                  {
+                    "name": "account",
+                    "type": "account",
+                    "label": "关联账号",
+                    "required": false,
+                    "description": "选填，选择后会把演示服务地址同步回该账号的 base_url",
+                    "placeholder": "",
+                    "account_type_key": "octo_demo",
+                    "bind": ""
+                  },
+                  {
+                    "name": "base_url",
+                    "type": "string",
+                    "label": "服务地址",
+                    "default": "http://127.0.0.1:18080",
+                    "required": false,
+                    "description": "不填则使用默认地址，适合在插件详情页直接起一个本地演示服务",
+                    "placeholder": "http://127.0.0.1:18081",
+                    "account_type_key": "",
+                    "bind": ""
+                  },
+                  {
+                    "name": "lease_seconds",
+                    "type": "integer",
+                    "label": "保活时长（秒）",
+                    "default": 180,
+                    "required": false,
+                    "description": "本轮 Agent 续租时长，过短会被自动提升到安全下限",
+                    "placeholder": "",
+                    "min": 120,
+                    "max": 3600,
+                    "account_type_key": "",
+                    "bind": ""
+                  }
+                ]
+              },
+              {
+                "action": "AGENT_MONITOR",
+                "label": "创建任务监控 Agent",
+                "variant": "outline",
+                "mode": "agent",
+                "params": {},
+                "form": [
+                  {
+                    "name": "account",
+                    "type": "account",
+                    "label": "监控账号",
+                    "required": true,
+                    "description": "必填，选择要监控的 OctoDemo 账号",
+                    "placeholder": "",
+                    "account_type_key": "octo_demo",
+                    "bind": ""
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "context": "plugin"
       },
       {
         "key": "register",
@@ -339,8 +486,12 @@
                   {
                     "name": "display_name",
                     "type": "string",
+                    "label": "显示名称",
                     "required": false,
-                    "description": "显示名称（可选，不填则使用用户名）"
+                    "description": "显示名称（可选，不填则使用用户名）",
+                    "placeholder": "",
+                    "account_type_key": "",
+                    "bind": ""
                   }
                 ]
               }

@@ -294,7 +294,7 @@ async function handleCreate() {
           submit-text="创建触发器"
           submit-loading-text="创建中…"
           :submit-visible="!lastToken"
-          :submit-disabled="!formData.key.trim() || !formData.job_definition_id || !definitions.length"
+          :submit-disabled="!formData.key.trim() || !formData.job_definition_id || (!loadingDefinitions && !definitions.length)"
           :submit-loading="create.loading.value"
           @cancel="router.push(to.triggers.list())"
           @submit="handleCreate"

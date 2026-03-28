@@ -98,15 +98,22 @@ import json, sys
 payload = json.loads(sys.stdin.read() or "{}")
 result = {
   "settings": payload.get("context", {}).get("settings", {}),
-  "source": payload.get("context", {}).get("source", "")
+  "source": payload.get("context", {}).get("source", ""),
+  "plugin_key": payload.get("context", {}).get("plugin_key", ""),
+  "api_url": payload.get("context", {}).get("api_url", ""),
+  "api_token": payload.get("context", {}).get("api_token", "")
 }
 print(json.dumps({"status":"success","result":result}), flush=True)
 `)
 
 	service := New(stubRepo{plugin: plugin}, python, "").WithSettingsStore(stubSettingsStore{
 		values: map[string]json.RawMessage{
-			"plugin_settings:demo": json.RawMessage(`{"api_key":"k-demo"}`),
+			"demo": json.RawMessage(`{"api_key":"k-demo"}`),
 		},
+	}).WithInternalAPI(InternalAPIConfig{
+		URL:            "http://127.0.0.1:8080",
+		Token:          "test-admin",
+		TimeoutSeconds: 30,
 	})
 
 	var events []plugindomain.ExecutionEvent
@@ -138,6 +145,15 @@ print(json.dumps({"status":"success","result":result}), flush=True)
 	}
 	if settingsMap["api_key"] != "k-demo" {
 		t.Fatalf("unexpected settings value: %#v", settingsMap)
+	}
+	if resultEvent.Data["plugin_key"] != "demo" {
+		t.Fatalf("expected plugin_key demo, got %#v", resultEvent.Data["plugin_key"])
+	}
+	if resultEvent.Data["api_url"] != "http://127.0.0.1:8080" {
+		t.Fatalf("expected api_url to be injected, got %#v", resultEvent.Data["api_url"])
+	}
+	if resultEvent.Data["api_token"] != "test-admin" {
+		t.Fatalf("expected api_token to be injected, got %#v", resultEvent.Data["api_token"])
 	}
 }
 
@@ -278,12 +294,12 @@ type stubSettingsStore struct {
 	values map[string]json.RawMessage
 }
 
-func (s stubSettingsStore) GetConfig(ctx context.Context, key string) (json.RawMessage, error) {
+func (s stubSettingsStore) GetSettings(ctx context.Context, pluginKey string) (json.RawMessage, error) {
 	_ = ctx
 	if s.values == nil {
 		return json.RawMessage("{}"), nil
 	}
-	if value, ok := s.values[key]; ok {
+	if value, ok := s.values[pluginKey]; ok {
 		return value, nil
 	}
 	return json.RawMessage("{}"), nil

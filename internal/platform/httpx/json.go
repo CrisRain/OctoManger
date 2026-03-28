@@ -2,7 +2,6 @@ package httpx
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/cloudwego/hertz/pkg/app"
 )
@@ -15,7 +14,15 @@ func WriteJSON(ctx context.Context, c *app.RequestContext, status int, payload a
 // DecodeJSON decodes the request body as JSON into target.
 func DecodeJSON(c *app.RequestContext, target any) error {
 	if err := c.BindJSON(target); err != nil {
-		return fmt.Errorf("decode json body: %w", err)
+		return ErrInvalidJSONBody
 	}
 	return nil
+}
+
+var ErrInvalidJSONBody = &jsonDecodeError{}
+
+type jsonDecodeError struct{}
+
+func (e *jsonDecodeError) Error() string {
+	return "invalid JSON body"
 }

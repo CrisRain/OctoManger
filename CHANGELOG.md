@@ -9,6 +9,9 @@
 ### Added
 - 完整文档套件：README.md、ARCHITECTURE.md、API_REFERENCE.md、CONTRIBUTING.md
 
+### Changed
+- 运行时入口收束到 `apps/octomanger`，启动时自动执行 GORM AutoMigrate，并默认拉起 API、Worker 与内嵌 Web UI
+
 ---
 
 ## [0.1.0] — 2026-03-21

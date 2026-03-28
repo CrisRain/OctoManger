@@ -39,18 +39,12 @@ git clone <repo-url> && cd OctoManger
 
 # 2. 设置必要环境变量
 export DATABASE_DSN="postgres://octo:octo@localhost:5432/octomanger?sslmode=disable"
-export ADMIN_KEY="dev-only-key"     # 留空则无鉴权；兼容旧变量 X_ADMIN_KEY
+export ADMIN_KEY="dev-only-key"     # 留空则无鉴权
 
-# 3. 执行数据库自动迁移
-go run ./apps/migrate migrate
+# 3. 启动统一后端入口（自动 migrate + API + Worker + 内嵌 Web UI）
+go run ./apps/octomanger
 
-# 4. 启动 API 服务（终端 1）
-go run ./apps/api
-
-# 5. 启动 Worker（终端 2）
-go run ./apps/worker
-
-# 6. 启动前端开发服务器（终端 3）
+# 4. 启动前端开发服务器（终端 2，可选）
 cd apps/web && bun install && bun run dev
 # 访问 http://localhost:5173（代理 /api/v2 → :8080）
 ```
@@ -71,6 +65,11 @@ docker compose up --build
 ```
 关键文件                                    用途
 ─────────────────────────────────────────────────────────────────
+apps/octomanger/main.go                     唯一启动入口
+internal/platform/entrypoint/run.go         启动编排（AutoMigrate + API + Worker）
+internal/platform/apiserver/server.go       HTTP 服务装配与路由注册
+internal/platform/worker/run.go             Worker 调度与插件启动编排
+internal/platform/webui/                    构建后嵌入二进制的前端资源
 internal/platform/runtime/runtime.go        依赖注入根节点，注册新服务于此
 internal/domains/{domain}/transport/http.go HTTP 路由注册
 internal/domains/{domain}/app/service.go    业务逻辑
@@ -107,14 +106,14 @@ mkdir -p internal/domains/foo/{transport,app,domain,infra/postgres}
 3. **`app/service.go`** — 业务逻辑，持有 Repository 接口
 4. **`transport/http.go`** — 注册路由，调用 Service
 5. **`internal/platform/runtime/runtime.go`** — 在 `App` struct 中添加字段，在 `Bootstrap()` 中初始化
-6. **`apps/api/main.go`** — 调用 `RegisterFooRoutes(app, router)`
+6. **`internal/platform/apiserver/server.go`** — 将新域的 HTTP handler 接入统一 API 入口
 
 ### 数据库变更
 
 数据库结构由 GORM AutoMigrate 维护，表结构变更请同步更新 `internal/platform/database/` 下的模型定义与兼容逻辑，然后执行：
 
 ```bash
-go run ./apps/migrate migrate
+go run ./apps/octomanger
 ```
 
 涉及历史字段兼容或 GORM 无法表达的索引/约束时，请在 AutoMigrate 逻辑中补充显式 SQL。
@@ -129,7 +128,7 @@ go test ./...
 go test ./internal/domains/jobs/...
 
 # 运行指定测试函数
-go test ./apps/api -run TestJobExecution
+go test ./internal/platform/apiserver -run TestAPISmoke_TriggerToWorkerExecution
 ```
 
 - 新增域逻辑须包含 `app/` 层的单元测试

@@ -12,27 +12,24 @@ import (
 	jobapp "octomanger/internal/domains/jobs/app"
 	jobdomain "octomanger/internal/domains/jobs/domain"
 	jobpostgres "octomanger/internal/domains/jobs/infra/postgres"
-	"octomanger/internal/platform/auth"
 	"octomanger/internal/platform/httpx"
 )
 
 type Handler struct {
-	adminKey string
-	service  jobapp.Service
+	service jobapp.Service
 }
 
-func NewHandler(adminKey string, service jobapp.Service) Handler {
-	return Handler{adminKey: adminKey, service: service}
+func NewHandler(service jobapp.Service) Handler {
+	return Handler{service: service}
 }
 
 func (h Handler) Register(r *route.RouterGroup) {
-	guard := auth.RequireAdmin(h.adminKey)
 	r.GET("/job-definitions", h.listDefinitions)
-	r.POST("/job-definitions", guard, h.createDefinition)
+	r.POST("/job-definitions", h.createDefinition)
 	r.GET("/job-definitions/:id", h.getDefinition)
-	r.PATCH("/job-definitions/:id", guard, h.patchDefinition)
-	r.DELETE("/job-definitions/:id", guard, h.deleteDefinition)
-	r.POST("/job-definitions/:id/executions", guard, h.enqueueExecution)
+	r.PATCH("/job-definitions/:id", h.patchDefinition)
+	r.DELETE("/job-definitions/:id", h.deleteDefinition)
+	r.POST("/job-definitions/:id/executions", h.enqueueExecution)
 	r.GET("/job-executions", h.listExecutions)
 	r.GET("/job-executions/:id", h.getExecution)
 	r.GET("/job-executions/:id/events", h.streamExecutionEvents)
@@ -57,12 +54,20 @@ func (h Handler) getDefinition(ctx context.Context, c *app.RequestContext) {
 }
 
 func (h Handler) listDefinitions(ctx context.Context, c *app.RequestContext) {
-	items, err := h.service.ListDefinitions(ctx)
+	page, err := httpx.ParsePageRequest(c)
+	if err != nil {
+		httpx.BadRequest(ctx, c, err.Error())
+		return
+	}
+	items, total, err := h.service.ListDefinitionsPage(ctx, page.Limit, page.Offset)
 	if err != nil {
 		httpx.InternalServerError(ctx, c, err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, map[string]any{"items": items})
+	c.JSON(http.StatusOK, map[string]any{
+		"items":      items,
+		"pagination": httpx.BuildPageMeta(page, total),
+	})
 }
 
 func (h Handler) createDefinition(ctx context.Context, c *app.RequestContext) {
@@ -138,12 +143,20 @@ func (h Handler) enqueueExecution(ctx context.Context, c *app.RequestContext) {
 }
 
 func (h Handler) listExecutions(ctx context.Context, c *app.RequestContext) {
-	items, err := h.service.ListExecutions(ctx)
+	page, err := httpx.ParsePageRequest(c)
+	if err != nil {
+		httpx.BadRequest(ctx, c, err.Error())
+		return
+	}
+	items, total, err := h.service.ListExecutionsPage(ctx, page.Limit, page.Offset)
 	if err != nil {
 		httpx.InternalServerError(ctx, c, err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, map[string]any{"items": items})
+	c.JSON(http.StatusOK, map[string]any{
+		"items":      items,
+		"pagination": httpx.BuildPageMeta(page, total),
+	})
 }
 
 func (h Handler) getExecution(ctx context.Context, c *app.RequestContext) {
@@ -198,7 +211,12 @@ func (h Handler) streamExecutionEvents(ctx context.Context, c *app.RequestContex
 			}
 
 			execution, err := h.service.GetExecution(ctx, execID)
-			if err == nil && execution != nil &&
+			if err != nil {
+				if !errors.Is(err, jobpostgres.ErrNotFound) {
+					_ = w.WriteEvent("error", map[string]any{"message": err.Error()})
+					return
+				}
+			} else if execution != nil &&
 				(execution.Status == jobdomain.StatusSucceeded || execution.Status == jobdomain.StatusFailed) {
 				_ = w.WriteEvent("state", execution)
 				return

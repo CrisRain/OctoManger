@@ -30,3 +30,16 @@ export function useDashboardSnapshot() {
 
   return { data: dashboardSummary, loading: loadingDashboard, error, refresh };
 }
+
+export function useSystemLogs(limit = 200) {
+  const store = useSystemStore();
+  const { systemLogs, loadingLogs, error } = storeToRefs(store);
+
+  async function refresh() {
+    await store.fetchSystemLogs(limit);
+  }
+
+  onMounted(() => { void refresh(); });
+
+  return { data: systemLogs, loading: loadingLogs, error, refresh };
+}

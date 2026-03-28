@@ -30,7 +30,7 @@ type domainServices struct {
 
 func bootstrapDomainServices(resources *platformResources, pluginSvc plugins.PluginService) *domainServices {
 	accountTypes := accounttypeapp.New(accounttypepostgres.New(resources.db))
-	accounts := accountapp.New(accountpostgres.New(resources.db))
+	accounts := accountapp.New(accountpostgres.New(resources.db), pluginSvc)
 	email := emailapp.New(emailpostgres.New(resources.db))
 	jobs := jobapp.New(resources.logger, jobpostgres.New(resources.db, resources.rdb), pluginSvc, resources.cfg.Worker.ID)
 	triggers := triggerapp.New(triggerpostgres.New(resources.db), jobs)

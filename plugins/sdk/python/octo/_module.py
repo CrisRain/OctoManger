@@ -25,10 +25,18 @@ class Setting:
 class ParamSpec:
     name: str
     type: str = "string"
+    label: str = ""
     default: Any = None
     required: bool = False
     choices: list[str] | None = None
     description: str = ""
+    placeholder: str = ""
+    rows: int | None = None
+    min: float | None = None
+    max: float | None = None
+    step: float | None = None
+    account_type_key: str = ""
+    bind: str = ""
 
 
 @dataclass
@@ -62,8 +70,10 @@ class UITab:
     sections: list[UISection] = field(default_factory=list)
     # context hints where this tab should appear:
     #   ""         — default, shown in account detail
+    #   "account"  — explicit alias for account detail
     #   "create"   — only relevant when creating / registering a new account
     #   "list"     — shown in account list view
+    #   "plugin"   — shown in plugin detail
     context: str = ""
 
 
@@ -243,7 +253,7 @@ class Module:
                 raise ValueError(f"{scope}: button action is required")
             if action not in action_keys:
                 raise ValueError(f"{scope}: unknown button action {action}")
-            if button.mode not in ("sync", "job"):
+            if button.mode not in ("sync", "job", "agent"):
                 raise ValueError(f"{scope}: unsupported button mode {button.mode}")
 
     def _clean_dict(self, value: Any) -> Any:

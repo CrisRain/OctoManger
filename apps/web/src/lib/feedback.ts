@@ -221,9 +221,9 @@ function getContainer(id: string, className: string) {
   if (!container) {
     container = document.createElement("div");
     container.id = id;
+    container.className = className;
     document.body.appendChild(container);
   }
-  container.className = className;
   return container;
 }
 
@@ -408,8 +408,9 @@ function createToastInstance(payload: ToastPayload): ToastInstance | null {
   countEl.className = "hidden min-w-[2rem] items-center justify-center rounded-full bg-slate-900/[0.06] px-2 py-1 text-[11px] font-semibold leading-none text-slate-500";
   actionsEl.appendChild(countEl);
 
+  let closeBtn: HTMLButtonElement | null = null;
   if (payload.closable) {
-    const closeBtn = document.createElement("button");
+    closeBtn = document.createElement("button");
     closeBtn.type = "button";
     closeBtn.className = "inline-flex h-7 w-7 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-900/[0.06] hover:text-slate-700";
     closeBtn.setAttribute("aria-label", "关闭消息");
@@ -439,9 +440,8 @@ function createToastInstance(payload: ToastPayload): ToastInstance | null {
     close: () => dismissToast(payload.channel, payload.id),
   };
 
-  const closeButton = actionsEl.querySelector("button");
-  if (closeButton) {
-    closeButton.addEventListener("click", instance.close);
+  if (closeBtn) {
+    closeBtn.addEventListener("click", instance.close);
   }
 
   applyTone(instance);

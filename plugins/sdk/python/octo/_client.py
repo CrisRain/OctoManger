@@ -135,18 +135,13 @@ class OctoClient:
 
     def get_account(self, account_id: int) -> dict[str, Any] | None:
         try:
-            data = self.get(f"/api/v1/octo-modules/internal/accounts/{account_id}")
-            return data if isinstance(data, dict) else None
+            return self.get_account_or_raise(account_id)
         except Exception:
             return None
 
     def get_account_by_identifier(self, type_key: str, identifier: str) -> dict[str, Any] | None:
         try:
-            data = self.get(
-                "/api/v1/octo-modules/internal/accounts/by-identifier",
-                query={"type_key": type_key, "identifier": identifier},
-            )
-            return data if isinstance(data, dict) else None
+            return self.get_account_by_identifier_or_raise(type_key, identifier)
         except Exception:
             return None
 
@@ -159,6 +154,21 @@ class OctoClient:
             return data if isinstance(data, dict) else None
         except Exception:
             return None
+
+    def get_account_or_raise(self, account_id: int) -> dict[str, Any]:
+        data = self.get(f"/api/v1/octo-modules/internal/accounts/{account_id}")
+        if not isinstance(data, dict):
+            raise OctoAPIError("internal account api returned invalid payload")
+        return data
+
+    def get_account_by_identifier_or_raise(self, type_key: str, identifier: str) -> dict[str, Any]:
+        data = self.get(
+            "/api/v1/octo-modules/internal/accounts/by-identifier",
+            query={"type_key": type_key, "identifier": identifier},
+        )
+        if not isinstance(data, dict):
+            raise OctoAPIError("internal account api returned invalid payload")
+        return data
 
 
 def from_context(ctx: dict[str, Any] | None) -> OctoClient | None:

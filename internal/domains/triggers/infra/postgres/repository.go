@@ -3,7 +3,6 @@ package triggerpostgres
 import (
 	"context"
 	"crypto/sha256"
-	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -13,6 +12,7 @@ import (
 	"gorm.io/gorm"
 
 	triggerdomain "octomanger/internal/domains/triggers/domain"
+	"octomanger/internal/platform/database"
 	"octomanger/internal/platform/dbutil"
 )
 
@@ -27,56 +27,60 @@ func New(db *gorm.DB) Repository {
 }
 
 func (r Repository) List(ctx context.Context) ([]triggerdomain.Trigger, error) {
-	rows, err := r.db.WithContext(ctx).Raw(`
-		SELECT id, key, name, job_definition_id, mode, default_input_json, token_prefix, enabled, created_at, updated_at
-		FROM triggers ORDER BY created_at DESC`).Rows()
-	if err != nil {
-		return nil, fmt.Errorf("list triggers: %w", err)
-	}
-	defer rows.Close()
+	items, _, err := r.ListPage(ctx, 0, 0)
+	return items, err
+}
 
-	items := make([]triggerdomain.Trigger, 0)
-	for rows.Next() {
-		item, err := scanTrigger(rows)
-		if err != nil {
-			return nil, err
-		}
-		items = append(items, item)
+func (r Repository) ListPage(ctx context.Context, limit int, offset int) ([]triggerdomain.Trigger, int64, error) {
+	var total int64
+	if err := r.db.WithContext(ctx).
+		Model(&database.TriggerModel{}).
+		Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("count triggers: %w", err)
 	}
-	return items, rows.Err()
+
+	var records []database.TriggerModel
+	query := r.db.WithContext(ctx).Order("created_at DESC")
+	if limit > 0 {
+		query = query.Limit(limit).Offset(offset)
+	}
+	if err := query.Find(&records).Error; err != nil {
+		return nil, 0, fmt.Errorf("list triggers: %w", err)
+	}
+
+	items := make([]triggerdomain.Trigger, len(records))
+	for i, record := range records {
+		items[i] = toDomainTrigger(record)
+	}
+	return items, total, nil
 }
 
 func (r Repository) GetByID(ctx context.Context, triggerID int64) (*triggerdomain.Trigger, error) {
-	row := r.db.WithContext(ctx).Raw(`
-		SELECT id, key, name, job_definition_id, mode, default_input_json, token_prefix, enabled, created_at, updated_at
-		FROM triggers WHERE id = $1`, triggerID).Row()
-	item, err := scanTrigger(row)
-	if err != nil {
-		return nil, err
+	var record database.TriggerModel
+	if err := r.db.WithContext(ctx).
+		First(&record, "id = ?", triggerID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("get trigger: %w", err)
 	}
+
+	item := toDomainTrigger(record)
 	return &item, nil
 }
 
 func (r Repository) GetByKey(ctx context.Context, key string) (*triggerdomain.Trigger, string, error) {
-	row := r.db.WithContext(ctx).Raw(`
-		SELECT id, key, name, job_definition_id, mode, default_input_json, token_prefix, enabled, created_at, updated_at, token_hash
-		FROM triggers WHERE key = $1`, key).Row()
-
-	var item triggerdomain.Trigger
-	var defaultInputJSON []byte
-	var tokenHash string
-	if err := row.Scan(
-		&item.ID, &item.Key, &item.Name, &item.JobDefinitionID, &item.Mode,
-		&defaultInputJSON, &item.TokenPrefix, &item.Enabled,
-		&item.CreatedAt, &item.UpdatedAt, &tokenHash,
-	); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+	var record database.TriggerModel
+	if err := r.db.WithContext(ctx).
+		First(&record, "key = ?", key).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, "", ErrNotFound
 		}
-		return nil, "", fmt.Errorf("scan trigger: %w", err)
+		return nil, "", fmt.Errorf("get trigger by key: %w", err)
 	}
-	item.DefaultInput = dbutil.DecodeJSONMap(defaultInputJSON)
-	return &item, tokenHash, nil
+
+	item := toDomainTrigger(record)
+	return &item, record.TokenHash, nil
 }
 
 func (r Repository) Create(ctx context.Context, input triggerdomain.CreateInput, token string) (*triggerdomain.Trigger, error) {
@@ -91,17 +95,21 @@ func (r Repository) Create(ctx context.Context, input triggerdomain.CreateInput,
 		tokenPrefix = tokenPrefix[:8]
 	}
 
-	row := r.db.WithContext(ctx).Raw(`
-		INSERT INTO triggers (key, name, job_definition_id, mode, default_input_json, token_hash, token_prefix, enabled)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		RETURNING id, key, name, job_definition_id, mode, default_input_json, token_prefix, enabled, created_at, updated_at`,
-		input.Key, input.Name, input.JobDefinitionID, input.Mode,
-		defaultInputJSON, tokenHash, tokenPrefix, input.Enabled,
-	).Row()
-	item, err := scanTrigger(row)
-	if err != nil {
+	record := database.TriggerModel{
+		Key:              input.Key,
+		Name:             input.Name,
+		JobDefinitionID:  input.JobDefinitionID,
+		Mode:             input.Mode,
+		DefaultInputJSON: database.JSONBytes(defaultInputJSON),
+		TokenHash:        tokenHash,
+		TokenPrefix:      tokenPrefix,
+		Enabled:          input.Enabled,
+	}
+	if err := r.db.WithContext(ctx).Create(&record).Error; err != nil {
 		return nil, fmt.Errorf("create trigger: %w", err)
 	}
+
+	item := toDomainTrigger(record)
 	return &item, nil
 }
 
@@ -131,22 +139,28 @@ func (r Repository) Patch(ctx context.Context, triggerID int64, input triggerdom
 		return nil, fmt.Errorf("marshal trigger default input: %w", err)
 	}
 
-	row := r.db.WithContext(ctx).Raw(`
-		UPDATE triggers
-		SET name = $2, job_definition_id = $3, mode = $4, default_input_json = $5, enabled = $6, updated_at = NOW()
-		WHERE id = $1
-		RETURNING id, key, name, job_definition_id, mode, default_input_json, token_prefix, enabled, created_at, updated_at`,
-		triggerID, current.Name, current.JobDefinitionID, current.Mode, defaultInputJSON, current.Enabled,
-	).Row()
-	item, err := scanTrigger(row)
-	if err != nil {
-		return nil, fmt.Errorf("patch trigger: %w", err)
+	result := r.db.WithContext(ctx).
+		Model(&database.TriggerModel{}).
+		Where("id = ?", triggerID).
+		Updates(map[string]any{
+			"name":               current.Name,
+			"job_definition_id":  current.JobDefinitionID,
+			"mode":               current.Mode,
+			"default_input_json": defaultInputJSON,
+			"enabled":            current.Enabled,
+		})
+	if result.Error != nil {
+		return nil, fmt.Errorf("patch trigger: %w", result.Error)
 	}
-	return &item, nil
+	if result.RowsAffected == 0 {
+		return nil, ErrNotFound
+	}
+
+	return r.GetByID(ctx, triggerID)
 }
 
 func (r Repository) Delete(ctx context.Context, triggerID int64) error {
-	result := r.db.WithContext(ctx).Exec(`DELETE FROM triggers WHERE id = $1`, triggerID)
+	result := r.db.WithContext(ctx).Delete(&database.TriggerModel{}, triggerID)
 	if result.Error != nil {
 		return fmt.Errorf("delete trigger: %w", result.Error)
 	}
@@ -165,23 +179,17 @@ func hashToken(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-type scanner interface {
-	Scan(dest ...any) error
-}
-
-func scanTrigger(row scanner) (triggerdomain.Trigger, error) {
-	var item triggerdomain.Trigger
-	var defaultInputJSON []byte
-	if err := row.Scan(
-		&item.ID, &item.Key, &item.Name, &item.JobDefinitionID, &item.Mode,
-		&defaultInputJSON, &item.TokenPrefix, &item.Enabled,
-		&item.CreatedAt, &item.UpdatedAt,
-	); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return triggerdomain.Trigger{}, ErrNotFound
-		}
-		return triggerdomain.Trigger{}, fmt.Errorf("scan trigger: %w", err)
+func toDomainTrigger(record database.TriggerModel) triggerdomain.Trigger {
+	return triggerdomain.Trigger{
+		ID:              record.ID,
+		Key:             record.Key,
+		Name:            record.Name,
+		JobDefinitionID: record.JobDefinitionID,
+		Mode:            record.Mode,
+		DefaultInput:    dbutil.DecodeJSONMap([]byte(record.DefaultInputJSON)),
+		TokenPrefix:     record.TokenPrefix,
+		Enabled:         record.Enabled,
+		CreatedAt:       record.CreatedAt,
+		UpdatedAt:       record.UpdatedAt,
 	}
-	item.DefaultInput = dbutil.DecodeJSONMap(defaultInputJSON)
-	return item, nil
 }

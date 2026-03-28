@@ -5,6 +5,7 @@ export * from "./config";
 export * from "./email-accounts";
 export * from "./jobs";
 export * from "./plugins";
+export * from "./setup";
 export * from "./streams";
 export * from "./system";
 export * from "./triggers";

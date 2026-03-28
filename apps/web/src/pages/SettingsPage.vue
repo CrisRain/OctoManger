@@ -17,7 +17,7 @@ import { useAuthStore } from "@/store";
 import { storeToRefs } from "pinia";
 import { PageHeader } from "@/components/index";
 
-const { data: statusData, refresh: _refreshStatus } = useSystemStatus();
+const { data: statusData, refresh: refreshStatusData } = useSystemStatus();
 const message = useMessage();
 const { withErrorHandler } = useErrorHandler();
 
@@ -28,22 +28,30 @@ const adminKeyDraft = ref("");
 const adminKeyChanged = computed(() => adminKeyDraft.value !== (adminKey.value ?? ""));
 
 const {
-  knownConfigs,
-  configs,
-  configEdits,
+  config,
+  configLoading,
   configSaving,
+  isConfigDirty,
   loadConfigs,
   saveConfig,
+  resetConfig,
 } = useSystemConfigs();
 
-onMounted(() => { void loadConfigs(); });
+onMounted(() => {
+  void withErrorHandler(
+    async () => {
+      await loadConfigs();
+    },
+    { action: "加载配置" },
+  );
+});
 
 watch(
   adminKey,
   (value) => {
     adminKeyDraft.value = value ?? "";
   },
-  { immediate: true }
+  { immediate: true },
 );
 
 function persistAdminKey(value: string) {
@@ -55,24 +63,23 @@ function handleSaveAdminKey() {
   message.success(adminKeyDraft.value.trim() ? "管理员密钥已保存" : "管理员密钥已清空");
 }
 
-async function handleSaveConfig(configKey: string) {
+async function handleSaveConfig() {
   await withErrorHandler(
     async () => {
-      await saveConfig(configKey);
-      message.success("已保存");
+      await saveConfig();
+      message.success("系统配置已保存");
     },
-    { action: "保存配置" }
+    { action: "保存系统配置" },
   );
 }
 
-// 刷新状态
 async function refreshStatus() {
   await withErrorHandler(
     async () => {
-      await _refreshStatus();
+      await refreshStatusData();
       message.success("状态已刷新");
     },
-    { action: "刷新状态" }
+    { action: "刷新状态" },
   );
 }
 </script>
@@ -94,9 +101,7 @@ async function refreshStatus() {
       </template>
     </PageHeader>
 
-    <!-- 顶部卡片网格 -->
     <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
-      <!-- 系统状态 -->
       <ui-card class="min-w-0">
         <template #title>
           <div class="flex items-center gap-2">
@@ -125,14 +130,18 @@ async function refreshStatus() {
             <span class="text-xs font-semibold tracking-wider text-slate-500">已加载插件数</span>
             <span class="text-sm font-medium text-slate-900">{{ statusData?.plugin_count ?? "—" }}</span>
           </div>
-          <div v-if="statusData?.now" class="flex items-center justify-between gap-4 py-4 max-md:flex-col max-md:items-start max-md:gap-2">
+          <div
+            v-if="statusData?.now"
+            class="flex items-center justify-between gap-4 py-4 max-md:flex-col max-md:items-start max-md:gap-2"
+          >
             <span class="text-xs font-semibold tracking-wider text-slate-500">服务器时间</span>
-            <span class="text-sm font-medium text-slate-900 font-mono">{{ new Date(statusData.now).toLocaleString("zh-CN") }}</span>
+            <span class="text-sm font-medium text-slate-900 font-mono">
+              {{ new Date(statusData.now).toLocaleString("zh-CN") }}
+            </span>
           </div>
         </div>
       </ui-card>
 
-      <!-- 管理员密钥设置 -->
       <ui-card class="min-w-0">
         <template #title>
           <div class="flex items-center gap-2">
@@ -159,7 +168,10 @@ async function refreshStatus() {
           </div>
         </div>
 
-        <form class="mt-4 rounded-xl border p-4 border-slate-200 bg-white/55 shadow-sm" @submit.prevent="handleSaveAdminKey">
+        <form
+          class="mt-4 rounded-xl border p-4 border-slate-200 bg-white/55 shadow-sm"
+          @submit.prevent="handleSaveAdminKey"
+        >
           <div class="flex flex-col gap-3">
             <ui-input
               v-model="adminKeyDraft"
@@ -170,7 +182,7 @@ async function refreshStatus() {
             />
             <div class="flex flex-col gap-3 [@media(min-width:768px)]:grid [@media(min-width:768px)]:gap-3 [@media(min-width:768px)]:grid-cols-[minmax(0,_1fr)_auto_auto]">
               <p class="text-sm leading-6 text-slate-500">
-                保存于当前浏览器，填写后会自动在所有请求里附带 <code>X-Admin-Key</code>。
+                保存后会自动在请求中附带 <code>X-Admin-Key</code>，并持久化到浏览器本地存储。
               </p>
               <ui-button
                 class="self-start max-md:w-full max-md:justify-center"
@@ -193,8 +205,8 @@ async function refreshStatus() {
         </form>
 
         <div class="text-sm leading-6 text-slate-500 mt-4 flex flex-col gap-2 rounded-xl border p-4 border-slate-200 bg-slate-50 shadow-sm">
-          <p>您的 Admin Key 已保存在本地浏览器中。</p>
-          <p>该值由服务器端的环境变量 <code>ADMIN_KEY</code> 控制。</p>
+          <p>您的 Admin Key 保存在浏览器本地存储中，可在鉴权页或本页更新。</p>
+          <p>服务端 API Key 由初始化流程生成并存储在数据库中。</p>
         </div>
       </ui-card>
     </div>
@@ -210,11 +222,10 @@ async function refreshStatus() {
 
         <div class="flex flex-col gap-4">
           <p class="text-sm leading-6 text-slate-500">
-            当前版本使用单个 <strong>Admin Key</strong> 作为 API 访问凭证，服务端通过
-            <code class="inline-flex items-center rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-xs font-mono text-slate-600">ADMIN_KEY</code> 进行配置。
+            当前版本通过 <strong>Admin Key</strong> 进行 API 访问控制，服务端将密钥哈希保存到数据库。
           </p>
           <p class="text-sm leading-6 text-slate-500">
-            目前不提供多 API Key 的签发、轮换或撤销列表页面，统一通过管理员密钥进行认证。
+            初始化后前端需在鉴权页输入密钥，随后请求会自动携带认证头。
           </p>
 
           <div class="overflow-hidden rounded-xl border border-slate-800 bg-slate-900 shadow-sm">
@@ -257,7 +268,6 @@ async function refreshStatus() {
       </ui-card>
     </div>
 
-    <!-- 系统配置 -->
     <ui-card class="min-w-0">
       <template #title>
         <div class="flex items-center gap-2">
@@ -267,33 +277,113 @@ async function refreshStatus() {
       </template>
 
       <template #extra>
-        <span class="text-sm leading-6 text-slate-500">配置值以 JSON 格式存储</span>
+        <span class="text-sm leading-6 text-slate-500">系统级参数已改为固定字段，插件配置已迁移到插件详情页</span>
       </template>
 
       <div class="flex flex-col gap-4">
-        <div v-for="c in knownConfigs" :key="c.key" class="flex items-start gap-3 rounded-xl border p-4 border-slate-200 bg-slate-50 shadow-sm flex-col">
-          <div class="flex items-center justify-between gap-3 max-md:grid max-md:grid-cols-[1fr]">
-            <span class="text-sm font-semibold text-slate-900">{{ c.label }}</span>
-            <code class="inline-flex items-center rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-xs font-mono text-slate-600">{{ c.key }}</code>
-          </div>
-          <p class="text-sm text-slate-500">{{ c.description }}</p>
-          <div class="flex flex-col gap-3 [@media(min-width:768px)]:grid [@media(min-width:768px)]:gap-3 [@media(min-width:768px)]:grid-cols-[minmax(0,_1fr)_auto]">
+        <div
+          v-if="configLoading"
+          class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500 shadow-sm"
+        >
+          正在加载配置...
+        </div>
+
+        <div v-else class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div class="rounded-xl border p-4 border-slate-200 bg-slate-50 shadow-sm">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="text-sm font-semibold text-slate-900">应用名称</p>
+                <p class="mt-1 text-sm leading-6 text-slate-500">
+                  控制台品牌名称，同时会显示在浏览器标题中。
+                </p>
+              </div>
+              <code class="inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-0.5 text-xs font-mono text-slate-600">
+                app_name
+              </code>
+            </div>
+
             <ui-input
-              :model-value="configEdits[c.key] ?? ''"
-              placeholder='例如: "OctoManger" 或 30'
-              class="w-full"
-              @update:modelValue="configEdits[c.key] = $event"
+              :model-value="config.appName"
+              class="mt-4 w-full"
+              placeholder="OctoManager"
+              allow-clear
+              @update:modelValue="config.appName = String($event ?? '')"
             />
-            <ui-button
-              type="primary"
-              class="self-start max-md:w-full max-md:justify-center"
-              :disabled="configSaving[c.key] || configEdits[c.key] === configs[c.key]"
-              :loading="configSaving[c.key]"
-              @click="handleSaveConfig(c.key)"
-            >
-              <template #icon><icon-check /></template>
-              {{ configSaving[c.key] ? "保存中..." : "保存" }}
-            </ui-button>
+          </div>
+
+          <div class="rounded-xl border p-4 border-slate-200 bg-slate-50 shadow-sm">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="text-sm font-semibold text-slate-900">默认任务超时</p>
+                <p class="mt-1 text-sm leading-6 text-slate-500">
+                  新任务默认执行超时时间，单位为分钟。
+                </p>
+              </div>
+              <code class="inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-0.5 text-xs font-mono text-slate-600">
+                job_default_timeout_minutes
+              </code>
+            </div>
+
+            <ui-input-number
+              :model-value="config.jobDefaultTimeoutMinutes"
+              class="mt-4 w-full"
+              :min="0"
+              :step="1"
+              placeholder="30"
+              @update:model-value="config.jobDefaultTimeoutMinutes = Number($event ?? 0)"
+            />
+          </div>
+
+          <div class="rounded-xl border p-4 border-slate-200 bg-slate-50 shadow-sm">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="text-sm font-semibold text-slate-900">最大并发数</p>
+                <p class="mt-1 text-sm leading-6 text-slate-500">
+                  Worker 同时执行任务的上限。
+                </p>
+              </div>
+              <code class="inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-0.5 text-xs font-mono text-slate-600">
+                job_max_concurrency
+              </code>
+            </div>
+
+            <ui-input-number
+              :model-value="config.jobMaxConcurrency"
+              class="mt-4 w-full"
+              :min="0"
+              :step="1"
+              placeholder="10"
+              @update:model-value="config.jobMaxConcurrency = Number($event ?? 0)"
+            />
+          </div>
+
+          <div class="rounded-xl border p-4 border-slate-200 bg-slate-50 shadow-sm">
+            <p class="text-sm font-semibold text-slate-900">插件配置已独立管理</p>
+            <p class="mt-1 text-sm leading-6 text-slate-500">
+              插件专属设置和 gRPC 地址不再混在系统配置中，请前往对应插件详情页分别维护。
+            </p>
+            <div class="mt-4 flex flex-col gap-3 [@media(min-width:768px)]:grid [@media(min-width:768px)]:grid-cols-[minmax(0,_1fr)_auto_auto]">
+              <p class="text-sm leading-6 text-slate-500">
+                现在系统配置只保留全局字段，编辑更直接，也更便于后续扩展数据库结构。
+              </p>
+              <ui-button
+                class="self-start max-md:w-full max-md:justify-center"
+                :disabled="configSaving || !isConfigDirty"
+                @click="resetConfig"
+              >
+                重置
+              </ui-button>
+              <ui-button
+                type="primary"
+                class="self-start max-md:w-full max-md:justify-center"
+                :disabled="configSaving || !isConfigDirty"
+                :loading="configSaving"
+                @click="handleSaveConfig"
+              >
+                <template #icon><icon-check /></template>
+                保存系统配置
+              </ui-button>
+            </div>
           </div>
         </div>
       </div>

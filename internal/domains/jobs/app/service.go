@@ -12,26 +12,22 @@ import (
 
 	jobdomain "octomanger/internal/domains/jobs/domain"
 	jobpostgres "octomanger/internal/domains/jobs/infra/postgres"
+	plugins "octomanger/internal/domains/plugins"
 	plugindomain "octomanger/internal/domains/plugins/domain"
 	"octomanger/internal/platform/logbatch"
 )
 
-// pluginExecutor is the narrow interface jobapp needs from the plugin backend.
-type pluginExecutor interface {
-	Execute(ctx context.Context, pluginKey string, request plugindomain.ExecutionRequest, onEvent func(plugindomain.ExecutionEvent)) error
-}
-
 type Service struct {
 	logger   *zap.Logger
 	repo     jobpostgres.Repository
-	plugins  pluginExecutor
+	plugins  plugins.PluginService
 	workerID string
 }
 
 func New(
 	logger *zap.Logger,
 	repo jobpostgres.Repository,
-	plugins pluginExecutor,
+	plugins plugins.PluginService,
 	workerID string,
 ) Service {
 	return Service{
@@ -44,6 +40,10 @@ func New(
 
 func (s Service) ListDefinitions(ctx context.Context) ([]jobdomain.JobDefinition, error) {
 	return s.repo.ListDefinitions(ctx)
+}
+
+func (s Service) ListDefinitionsPage(ctx context.Context, limit int, offset int) ([]jobdomain.JobDefinition, int64, error) {
+	return s.repo.ListDefinitionsPage(ctx, limit, offset)
 }
 
 func (s Service) GetDefinition(ctx context.Context, definitionID int64) (*jobdomain.JobDefinition, error) {
@@ -82,6 +82,10 @@ func (s Service) EnqueueExecution(
 
 func (s Service) ListExecutions(ctx context.Context) ([]jobdomain.JobExecution, error) {
 	return s.repo.ListExecutions(ctx)
+}
+
+func (s Service) ListExecutionsPage(ctx context.Context, limit int, offset int) ([]jobdomain.JobExecution, int64, error) {
+	return s.repo.ListExecutionsPage(ctx, limit, offset)
 }
 
 func (s Service) GetExecution(ctx context.Context, executionID int64) (*jobdomain.JobExecution, error) {

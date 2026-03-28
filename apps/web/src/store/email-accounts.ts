@@ -121,7 +121,9 @@ export const useEmailAccountsStore = defineStore("emailAccounts", () => {
   }
 
   async function exchangeCode(id: number, payload: OutlookExchangeCodeInput) {
-    return exchangeOutlookCode(id, payload);
+    const result = await exchangeOutlookCode(id, payload);
+    emailAccounts.value = emailAccounts.value.map((item) => (item.id === id ? result : item));
+    return result;
   }
 
   async function fetchMailboxes(id: number, pattern?: string): Promise<EmailMailboxListResult> {

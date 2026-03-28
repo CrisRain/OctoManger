@@ -1,7 +1,7 @@
 # octo\_demo — OctoManger 插件完整示例
 
 本目录是一个功能完整的 OctoManger 插件演示，覆盖所有 SDK 特性。
-配套了一个零依赖的假数据服务器 (`fake_server.py`)，无需真实外部服务即可运行。
+内置了一个零依赖的假数据服务器，默认由插件主进程内嵌启动，无需额外准备真实外部服务。
 
 ***
 
@@ -10,7 +10,7 @@
 ```
 octo_demo/
 ├── main.py              # 插件主文件（所有 SDK 特性示例）
-├── fake_server.py       # 模拟外部 API 的假数据服务器
+├── fake_server.py       # 内置演示服务的调试入口（主流程由 main.py 内嵌启动）
 ├── requirements.txt     # 插件 gRPC 运行所需依赖
 └── README.md            # 本文档
 ```
@@ -21,23 +21,7 @@ octo_demo/
 
 ## 快速开始
 
-### 第一步：启动假数据服务器
-
-```
-cd plugins/modules/octo_demo
-python3 fake_server.py
-# 输出：
-# [fake-server] 启动于 http://127.0.0.1:18080
-# [fake-server] 测试账号 → username=testuser  api_key=demo_testkey_12345678
-```
-
-自定义端口：
-
-```bash
-python3 fake_server.py --port 9000 --host 0.0.0.0
-```
-
-### 第二步：配置 OctoManger
+### 第一步：配置 OctoManger
 
 在 `.env` 或 Docker Compose 中设置插件目录；`octo_demo` 的 gRPC 地址会在系统首次启动时自动初始化到数据库配置：
 
@@ -62,7 +46,7 @@ PYTHON_BIN=python3
 如需覆盖首次初始化值，仍可在首启前设置 `PLUGIN_GRPC_OCTO_DEMO_ADDR`。
 账号类型会在插件健康后自动同步。
 
-### 第三步：在 OctoManger 中创建账号
+### 第二步：在 OctoManger 中创建账号
 
 进入「账号」页面 → 新建账号 → 选择 **OctoDemo 演示** 类型，填写：
 
@@ -72,7 +56,28 @@ PYTHON_BIN=python3
 | API Key | `demo_testkey_12345678`  |
 | 服务地址    | `http://127.0.0.1:18080` |
 
-或使用「注册」Tab 自动注册新账号（无需手动填写 API Key）。
+保存后进入账号详情页，在「演示服务」Tab 点击「启动并保活演示服务」。
+前端会自动创建并启动对应 Agent，插件主进程会在 `base_url` 对应地址拉起内置服务。
+
+然后你可以：
+
+- 直接使用测试账号 `testuser / demo_testkey_12345678`
+- 或使用「注册」Tab 自动注册新账号（无需手动填写 API Key）
+
+### 第三步：可选的本地调试入口
+
+如果你只想单独验证内置服务，也可以直接运行：
+
+```bash
+cd plugins/modules/octo_demo
+python3 fake_server.py
+```
+
+自定义端口：
+
+```bash
+python3 fake_server.py --port 9000 --host 0.0.0.0
+```
 
 ***
 
@@ -89,6 +94,7 @@ PYTHON_BIN=python3
 | `COMPLETE_TASK` | sync  | 将任务标记为已完成                    |
 | `DELETE_TASK`   | sync  | 删除任务                         |
 | `REGISTER`      | sync  | 自动注册新账号（仅创建账号时）              |
+| `AGENT_FAKE_SERVER` | agent | 在插件主进程中启动并保活内置演示服务 |
 | `AGENT_MONITOR` | agent | 定期采集统计数据，发现 critical 任务则告警   |
 
 ### 执行模式
@@ -131,12 +137,16 @@ octo.Setting(
 octo.ParamSpec(
     name="priority",
     type="string",
+    label="优先级",
     required=False,
     default="medium",
     choices=["low", "medium", "high", "critical"],
     description="优先级",
 )
 ```
+
+`type` 现在除了 `string/password` 之外，还支持 `textarea`、`json`、`number`、`integer`、`boolean`、`switch`、`account`。  
+像 `account` 这类高层字段会在插件详情页直接渲染成账号选择器，插件级按钮可直接把所选账号作为执行上下文带给插件。
 
 ### UI 布局
 
@@ -155,7 +165,7 @@ module.set_ui(
                         octo.UIButton(
                             action="LIST_TASKS",
                             label="查询",
-                            mode="sync",        # "sync" 或 "job"
+                            mode="sync",        # "sync" / "job" / "agent"
                             variant="outline",  # 按钮样式
                             form=[...],         # 弹出表单参数
                             params={...},       # 固定参数（不弹表单）
@@ -292,7 +302,9 @@ X-Api-Key: demo_testkey_12345678
 
 ## Agent 配置示例
 
-在 OctoManger 的「Agents」页面创建一个新 Agent：
+推荐先在插件详情页点击「启动并保活演示服务」，这是 `AGENT_FAKE_SERVER` 的标准触发方式。
+这个入口现在支持直接选择一个 demo 账号、覆盖 `base_url`，以及调整本轮保活时长。
+如果要手工验证监控链路，也可以在 OctoManger 的「Agents」页面创建一个新 Agent：
 
 | 字段     | 值               |
 | ------ | --------------- |
@@ -324,4 +336,3 @@ python3 main.py --address 127.0.0.1:50051
 ```text
 [octo_demo] 以 gRPC 微服务模式启动，监听 127.0.0.1:50051
 ```
-

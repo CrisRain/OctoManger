@@ -8,7 +8,7 @@ import (
 	plugins "octomanger/internal/domains/plugins"
 	pluginapp "octomanger/internal/domains/plugins/app"
 	"octomanger/internal/domains/plugins/grpcclient"
-	systemapp "octomanger/internal/domains/system/app"
+	"octomanger/internal/platform/database"
 )
 
 func bootstrapPluginService(ctx context.Context, resources *platformResources) (plugins.PluginService, error) {
@@ -18,8 +18,10 @@ func bootstrapPluginService(ctx context.Context, resources *platformResources) (
 		Agent:   resources.cfg.Plugins.Timeout.Agent,
 	}
 
-	configStore := systemapp.New(resources.db, nil)
-	resolvedServices, err := resolvePluginServices(ctx, configStore, resources.cfg.Plugins.Services)
+	settingsStore := database.NewPluginSettingsStore(resources.db)
+	serviceConfigStore := database.NewPluginServiceConfigStore(resources.db)
+
+	resolvedServices, err := resolvePluginServices(ctx, serviceConfigStore, resources.cfg.Plugins.Services)
 	if err != nil {
 		return nil, err
 	}
@@ -30,6 +32,12 @@ func bootstrapPluginService(ctx context.Context, resources *platformResources) (
 	)
 
 	registry := grpcclient.NewStaticRegistry(toGRPCServiceMap(resources.cfg.Plugins.Services))
-	client := grpcclient.New(registry).WithExecutionTimeouts(timeouts)
-	return client.WithSettingsStore(configStore), nil
+	client := grpcclient.New(registry).
+		WithExecutionTimeouts(timeouts).
+		WithTransportSecurity(grpcclient.TransportSecurityConfig{
+			AllowInsecureRemote: resources.cfg.Plugins.GRPC.AllowInsecureRemote,
+			InsecureSkipVerify:  resources.cfg.Plugins.GRPC.InsecureSkipVerify,
+		}).
+		WithInternalAPI(buildPluginInternalAPIConfig(resources.cfg))
+	return client.WithSettingsStore(settingsStore), nil
 }
